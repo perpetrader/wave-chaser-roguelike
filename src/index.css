@@ -1,0 +1,322 @@
+@import url('https://fonts.googleapis.com/css2?family=Russo+One&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 10%;
+    --foreground: 180 100% 95%;
+
+    --card: 220 20% 14%;
+    --card-foreground: 180 100% 95%;
+
+    --popover: 220 20% 14%;
+    --popover-foreground: 180 100% 95%;
+
+    --primary: 174 72% 56%;
+    --primary-foreground: 220 20% 10%;
+
+    --secondary: 280 60% 60%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 220 15% 20%;
+    --muted-foreground: 220 10% 60%;
+
+    --accent: 45 100% 60%;
+    --accent-foreground: 220 20% 10%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 25%;
+    --input: 220 15% 25%;
+    --ring: 174 72% 56%;
+
+    --radius: 1rem;
+
+    /* Custom game colors */
+    --win: 142 76% 46%;
+    --lose: 0 72% 51%;
+    --tie: 45 100% 60%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(174 72% 56%), hsl(190 80% 45%));
+    --gradient-secondary: linear-gradient(135deg, hsl(280 60% 60%), hsl(320 70% 50%));
+    --gradient-accent: linear-gradient(135deg, hsl(45 100% 60%), hsl(30 100% 55%));
+    --gradient-bg: radial-gradient(ellipse at top, hsl(220 20% 16%), hsl(220 20% 10%));
+    
+    /* Shadows */
+    --shadow-glow: 0 0 30px hsl(174 72% 56% / 0.3);
+    --shadow-win: 0 0 40px hsl(142 76% 46% / 0.5);
+    --shadow-lose: 0 0 40px hsl(0 72% 51% / 0.5);
+    
+    /* Font families */
+    --font-display: 'Russo One', sans-serif;
+    --font-body: 'Space Grotesk', sans-serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    background: var(--gradient-bg);
+    min-height: 100vh;
+    min-height: 100dvh; /* Dynamic viewport height for mobile */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+  
+  /* Prevent text selection during game interactions */
+  .select-none {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+  
+  .animate-bounce-in {
+    animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+  
+  .animate-shake {
+    animation: shake 0.5s ease-in-out;
+  }
+  
+  .animate-pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+  
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+  
+  .animate-rock-crush-right {
+    animation: rockCrushRight 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  }
+  
+  .animate-rock-crush-left {
+    animation: rockCrushLeft 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  }
+  
+  .animate-crushed {
+    animation: crushed 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.3s forwards;
+  }
+  
+  .animate-paper-wrap-right {
+    animation: paperWrapRight 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  }
+  
+  .animate-paper-wrap-left {
+    animation: paperWrapLeft 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  }
+  
+  .animate-scissors-cut-right {
+    animation: scissorsCutRight 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  }
+  
+  .animate-scissors-cut-left {
+    animation: scissorsCutLeft 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-10px) rotate(-5deg); }
+  40% { transform: translateX(10px) rotate(5deg); }
+  60% { transform: translateX(-10px) rotate(-5deg); }
+  80% { transform: translateX(10px) rotate(5deg); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px hsl(174 72% 56% / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px hsl(174 72% 56% / 0.6);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes rockCrushRight {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  20% {
+    transform: translateX(10px) translateY(-30px) scale(1.1) rotate(10deg);
+  }
+  50% {
+    transform: translateX(50px) translateY(-40px) scale(1.15) rotate(20deg);
+  }
+  70% {
+    transform: translateX(80px) translateY(0) scale(1.2) rotate(10deg);
+  }
+  100% {
+    transform: translateX(80px) translateY(0) scale(1.15) rotate(0deg);
+  }
+}
+
+@keyframes rockCrushLeft {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  20% {
+    transform: translateX(-10px) translateY(-30px) scale(1.1) rotate(-10deg);
+  }
+  50% {
+    transform: translateX(-50px) translateY(-40px) scale(1.15) rotate(-20deg);
+  }
+  70% {
+    transform: translateX(-80px) translateY(0) scale(1.2) rotate(-10deg);
+  }
+  100% {
+    transform: translateX(-80px) translateY(0) scale(1.15) rotate(0deg);
+  }
+}
+
+@keyframes crushed {
+  0% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  20% {
+    transform: scale(0.9) rotate(-10deg);
+  }
+  40% {
+    transform: scale(0.7) rotate(15deg);
+    opacity: 0.8;
+  }
+  60% {
+    transform: scale(0.5) rotate(-5deg);
+    opacity: 0.6;
+  }
+  80% {
+    transform: scale(0.3) rotate(10deg);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(0.2) rotate(0deg);
+    opacity: 0.3;
+  }
+}
+
+@keyframes paperWrapRight {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  30% {
+    transform: translateX(30px) translateY(-20px) scale(1.1) rotate(15deg);
+  }
+  60% {
+    transform: translateX(60px) translateY(-10px) scale(1.12) rotate(5deg);
+  }
+  100% {
+    transform: translateX(80px) translateY(0) scale(1.1) rotate(0deg);
+  }
+}
+
+@keyframes paperWrapLeft {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  30% {
+    transform: translateX(-30px) translateY(-20px) scale(1.1) rotate(-15deg);
+  }
+  60% {
+    transform: translateX(-60px) translateY(-10px) scale(1.12) rotate(-5deg);
+  }
+  100% {
+    transform: translateX(-80px) translateY(0) scale(1.1) rotate(0deg);
+  }
+}
+
+@keyframes scissorsCutRight {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  25% {
+    transform: translateX(20px) translateY(-15px) scale(1.05) rotate(25deg);
+  }
+  50% {
+    transform: translateX(50px) translateY(-5px) scale(1.1) rotate(-10deg);
+  }
+  75% {
+    transform: translateX(70px) translateY(2px) scale(1.12) rotate(15deg);
+  }
+  100% {
+    transform: translateX(80px) translateY(0) scale(1.1) rotate(0deg);
+  }
+}
+
+@keyframes scissorsCutLeft {
+  0% {
+    transform: translateX(0) translateY(0) scale(1);
+  }
+  25% {
+    transform: translateX(-20px) translateY(-15px) scale(1.05) rotate(-25deg);
+  }
+  50% {
+    transform: translateX(-50px) translateY(-5px) scale(1.1) rotate(10deg);
+  }
+  75% {
+    transform: translateX(-70px) translateY(2px) scale(1.12) rotate(-15deg);
+  }
+  100% {
+    transform: translateX(-80px) translateY(0) scale(1.1) rotate(0deg);
+  }
+}
+
+@keyframes crushImpact {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--win) / 0);
+  }
+  50% {
+    box-shadow: 0 0 60px 20px hsl(var(--win) / 0.4);
+  }
+}
+
+@keyframes wave-ripple {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(5px);
+  }
+}
