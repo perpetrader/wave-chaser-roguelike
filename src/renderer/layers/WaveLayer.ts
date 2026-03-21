@@ -26,26 +26,27 @@ export class WaveLayer {
     shoreY: number,
   ): void {
     const waveRow = wave.row;
-    if (waveRow < OCEAN_HEIGHT) return; // Still in ocean, not visible on beach
-
     const waveY = waveRow * cellSize;
 
-    // ─── Water body: from shore to wave position ──────────────────────
-    const waterTop = shoreY;
-    const waterBottom = waveY + cellSize;
-    const waterHeight = waterBottom - waterTop;
+    // ─── Water body on the beach: from shore to wave position ─────────
+    // Only draw when the wave has reached or passed the shore
+    if (waveRow >= OCEAN_HEIGHT) {
+      const waterTop = shoreY;
+      const waterBottom = waveY + cellSize;
+      const waterHeight = waterBottom - waterTop;
 
-    if (waterHeight > 0) {
-      // Gradient: deeper near shore, shallower near crest
-      const grad = ctx.createLinearGradient(0, waterTop, 0, waterBottom);
-      grad.addColorStop(0, "hsla(200, 70%, 40%, 0.7)");
-      grad.addColorStop(0.6, "hsla(195, 65%, 50%, 0.5)");
-      grad.addColorStop(1, "hsla(190, 60%, 60%, 0.3)");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, waterTop, width, waterHeight);
+      if (waterHeight > 0) {
+        // Gradient: deeper near shore, shallower near crest
+        const grad = ctx.createLinearGradient(0, waterTop, 0, waterBottom);
+        grad.addColorStop(0, "hsla(200, 70%, 40%, 0.7)");
+        grad.addColorStop(0.6, "hsla(195, 65%, 50%, 0.5)");
+        grad.addColorStop(1, "hsla(190, 60%, 60%, 0.3)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, waterTop, width, waterHeight);
+      }
     }
 
-    // ─── Crest line (the leading edge of the wave) ────────────────────
+    // ─── Crest line (always visible, even in ocean) ───────────────────
     const crestY = waveY;
     const crestHeight = cellSize;
 
@@ -59,7 +60,7 @@ export class WaveLayer {
       crestColor = COLORS.crest;
     }
 
-    // Draw crest with slight glow
+    // Draw crest with glow
     if (!wave.touched || wave.magnetAffected) {
       ctx.shadowColor = crestColor;
       ctx.shadowBlur = wave.magnetAffected ? 10 : 6;
@@ -68,14 +69,14 @@ export class WaveLayer {
     ctx.fillStyle = crestColor;
     ctx.fillRect(0, crestY, width, crestHeight);
 
-    // Foam line at the very top of the crest (2px bright white)
+    // Foam highlight at the top edge of the crest (2px bright white)
     ctx.fillStyle = "hsla(180, 100%, 95%, 0.8)";
     ctx.fillRect(0, crestY, width, 2);
 
     ctx.shadowBlur = 0;
 
-    // ─── Spike indicators ─────────────────────────────────────────────
-    if (state.currentBeachEffect === "spikeWaves") {
+    // ─── Spike indicators (only on beach portion) ─────────────────────
+    if (state.currentBeachEffect === "spikeWaves" && waveRow >= OCEAN_HEIGHT) {
       const spikeY = crestY + crestHeight;
       const isFlashing = ((state.spikeFlashTimer ?? 0) % 300) < 150;
       ctx.fillStyle = isFlashing ? COLORS.spikeFlash : COLORS.spikeNormal;
