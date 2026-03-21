@@ -90,31 +90,29 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
   }, [selectedToeTapMode]);
 
   return (
-    <div 
-      className="fixed inset-0 flex flex-col items-center gap-4 sm:gap-6 py-4 px-2 overflow-y-auto bg-cover bg-center bg-no-repeat"
+    <div
+      className="fixed inset-0 flex flex-col items-center gap-3 sm:gap-4 py-4 px-3 overflow-y-auto bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url(${roguelikeBg})` }}
     >
-      {/* Game intro */}
-      <div className="flex flex-col items-center gap-2 text-center">
-        <div className="flex items-center gap-2 text-amber-400 mb-1">
-          <Swords className="w-5 h-5" />
-          <span className="text-lg font-display">Roguelike Mode</span>
-          <Swords className="w-5 h-5" />
-        </div>
-        <p className="text-white text-base sm:text-lg font-medium drop-shadow-lg">
-          Level-based progression with unlockable abilities!
-        </p>
-        <p className="text-white/70 text-sm">
-          Start with no abilities and build your power as you advance.
+      {/* Title */}
+      <div className="flex flex-col items-center text-center pt-2">
+        <h1 className="text-4xl sm:text-5xl font-display text-white drop-shadow-lg tracking-tight" style={{ textShadow: "0 0 40px hsla(200, 80%, 50%, 0.4), 0 2px 8px rgba(0,0,0,0.5)" }}>
+          WAVE CHASER
+        </h1>
+        <p className="text-cyan-300/80 text-sm mt-1 drop-shadow">
+          Touch the waves without getting too wet!
         </p>
       </div>
 
+      {/* Settings Grid */}
+      <div className="w-full max-w-md grid grid-cols-2 gap-2">
+
       {/* Movement Mode Selection */}
-      <Collapsible className="w-full max-w-md">
+      <Collapsible className="col-span-2 sm:col-span-1">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-emerald-500/30 hover:bg-slate-900/70 transition-colors">
           <div className="flex items-center gap-2">
             <Gauge className="w-4 h-4 text-emerald-400" />
-            <span className="text-base sm:text-lg font-display text-emerald-400">Movement Controls</span>
+            <span className="text-sm sm:text-base font-display text-emerald-400">Controls</span>
             <span className="text-xs text-emerald-400/70 bg-emerald-400/10 px-2 py-0.5 rounded">
               {MOVEMENT_MODES.find(m => m.mode === selectedMovementMode)?.name}
             </span>
@@ -149,11 +147,11 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       </Collapsible>
 
       {/* Run Type Selection */}
-      <Collapsible className="w-full max-w-md">
+      <Collapsible className="col-span-2 sm:col-span-1">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-purple-500/30 hover:bg-slate-900/70 transition-colors">
           <div className="flex items-center gap-2">
             <Crown className="w-4 h-4 text-purple-400" />
-            <span className="text-base sm:text-lg font-display text-purple-400">Run Type</span>
+            <span className="text-sm sm:text-base font-display text-purple-400">Mode</span>
             <span className="text-xs text-purple-400/70 bg-purple-400/10 px-2 py-0.5 rounded">
               {RUN_TYPES.find(r => r.type === selectedRunType)?.name}
             </span>
@@ -188,11 +186,11 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       </Collapsible>
 
       {/* Foot Type Selection */}
-      <Collapsible className="w-full max-w-md">
+      <Collapsible className="col-span-2 sm:col-span-1">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-orange-500/30 hover:bg-slate-900/70 transition-colors">
           <div className="flex items-center gap-2">
             <Footprints className="w-4 h-4 text-orange-400" />
-            <span className="text-base sm:text-lg font-display text-orange-400">Foot Type</span>
+            <span className="text-sm sm:text-base font-display text-orange-400">Feet</span>
             <span className="text-xs text-orange-400/70 bg-orange-400/10 px-2 py-0.5 rounded">
               {FOOT_TYPES.find(f => f.type === selectedFootType)?.name}
             </span>
@@ -227,11 +225,11 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       </Collapsible>
 
       {/* Toe Tap Mode Selection */}
-      <Collapsible className="w-full max-w-md">
+      <Collapsible className="col-span-2 sm:col-span-1">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-pink-500/30 hover:bg-slate-900/70 transition-colors">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-pink-400" />
-            <span className="text-base sm:text-lg font-display text-pink-400">Toe Tap Mode</span>
+            <span className="text-sm sm:text-base font-display text-pink-400">Toe Tap</span>
             <span className="text-xs text-pink-400/70 bg-pink-400/10 px-2 py-0.5 rounded">
               {TOE_TAP_MODES.find(t => t.mode === selectedToeTapMode)?.name}
             </span>
@@ -265,6 +263,8 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
         </CollapsibleContent>
       </Collapsible>
 
+      </div>{/* End settings grid */}
+
       {hasSavedRun && onContinue && (
         <Button
           onClick={onContinue}
@@ -293,8 +293,11 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
         )}
       </Button>
 
+      {/* Info sections */}
+      <div className="w-full max-w-md grid grid-cols-2 gap-2">
+
       {/* Rules Dropdown */}
-      <Collapsible open={rulesOpen} onOpenChange={setRulesOpen} className="w-full max-w-md">
+      <Collapsible open={rulesOpen} onOpenChange={setRulesOpen} className="col-span-2">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-cyan-500/30 hover:bg-slate-900/70 transition-colors">
           <span className="text-base sm:text-lg font-display text-cyan-400">Rules & Controls</span>
           <ChevronDown className={`w-5 h-5 text-cyan-400/70 transition-transform ${rulesOpen ? 'rotate-180' : ''}`} />
@@ -333,7 +336,7 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
 
 
       {/* Abilities Dropdown */}
-      <Collapsible open={abilitiesOpen} onOpenChange={setAbilitiesOpen} className="w-full max-w-md">
+      <Collapsible open={abilitiesOpen} onOpenChange={setAbilitiesOpen} className="col-span-2">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-amber-500/30 hover:bg-slate-900/70 transition-colors">
           <span className="text-base sm:text-lg font-display text-amber-400">Available Abilities</span>
           <ChevronDown className={`w-5 h-5 text-amber-400/70 transition-transform ${abilitiesOpen ? 'rotate-180' : ''}`} />
@@ -471,7 +474,7 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       </Collapsible>
 
       {/* Boss Beaches Dropdown */}
-      <Collapsible open={bossBeachesOpen} onOpenChange={setBossBeachesOpen} className="w-full max-w-md">
+      <Collapsible open={bossBeachesOpen} onOpenChange={setBossBeachesOpen} className="col-span-2">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-red-500/30 hover:bg-slate-900/70 transition-colors">
           <span className="text-base sm:text-lg font-display text-red-400">Boss Beaches</span>
           <ChevronDown className={`w-5 h-5 text-red-400/70 transition-transform ${bossBeachesOpen ? 'rotate-180' : ''}`} />
@@ -604,7 +607,7 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       </Collapsible>
 
       {/* Permanent Upgrades Dropdown */}
-      <Collapsible open={permanentUpgradesOpen} onOpenChange={setPermanentUpgradesOpen} className="w-full max-w-md">
+      <Collapsible open={permanentUpgradesOpen} onOpenChange={setPermanentUpgradesOpen} className="col-span-2">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-yellow-500/30 hover:bg-slate-900/70 transition-colors">
           <div className="flex items-center gap-2">
             <Crown className="w-4 h-4 text-yellow-400" />
@@ -653,7 +656,7 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       </Collapsible>
 
       {/* What's New Dropdown */}
-      <Collapsible open={changelogOpen} onOpenChange={setChangelogOpen} className="w-full max-w-md">
+      <Collapsible open={changelogOpen} onOpenChange={setChangelogOpen} className="col-span-2">
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-violet-500/30 hover:bg-slate-900/70 transition-colors">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-violet-400" />
@@ -1183,6 +1186,8 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
           </div>
         </CollapsibleContent>
       </Collapsible>
+
+      </div>{/* End info grid */}
     </div>
   );
 };
