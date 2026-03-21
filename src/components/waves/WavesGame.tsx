@@ -35,7 +35,7 @@ import {
   SKIP_CARD_GOLD, REST_WATER_TIME_HEAL, SHOP_PRICES 
 } from "./slayTheWaves/types";
 
-type GameState = "menu" | "roguelikeMenu" | "confirmLoadout" | "selectAbilities" | "playing" | "gameOver" | "levelComplete" | "roguelikeGameOver" | "selectBeach" | "slayMenu" | "slayMap" | "slayShop" | "slayRest" | "slayEvent" | "slayCardReward" | "slayBeachPreview" | "bossQuickRunDraft" | "bossQuickRunLevelComplete" | "bossQuickRunVictory";
+type GameState = "menu" | "roguelikeMenu" | "confirmLoadout" | "selectAbilities" | "playing" | "gameOver" | "levelComplete" | "roguelikeGameOver" | "selectBeach" | "slayMenu" | "slayMap" | "slayShop" | "slayRest" | "slayEvent" | "slayCardReward" | "slayBeachPreview" | "slayActComplete" | "slayVictory" | "bossQuickRunDraft" | "bossQuickRunLevelComplete" | "bossQuickRunVictory";
 type GameOverReason = "timer" | "missed" | null;
 export type MovementMode = "standard" | "slowerForward" | "momentum";
 export type RunType = "roguelike" | "beachBonanza" | "slayTheWaves" | "bossQuickRun" | "bossHellRun";
@@ -3237,11 +3237,33 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     // Increment level
     setRoguelikeLevel(prev => prev + 1);
     
-    // Check if boss - might advance act
+    // Check if boss - advance act or victory
     if (slayPendingNodeType === "boss" && slayMap) {
-      // TODO: Handle act progression
+      if (slayMap.actNumber >= SLAY_TOTAL_ACTS) {
+        // Defeated Act 3 boss — Victory!
+        // Show card reward first, then victory after card select
+        if (rewardAbilities.length > 0) {
+          setSlayCardRewardAbilities(rewardAbilities);
+          setGameState("slayCardReward");
+        } else {
+          setGameState("slayVictory");
+        }
+        return;
+      } else {
+        // Advance to next act — show card reward, then act complete
+        if (rewardAbilities.length > 0) {
+          setSlayCardRewardAbilities(rewardAbilities);
+          setGameState("slayCardReward");
+        } else {
+          // Generate next act map immediately
+          const nextAct = slayMap.actNumber + 1;
+          setSlayMap(generateMap(nextAct));
+          setGameState("slayActComplete");
+        }
+        return;
+      }
     }
-    
+
     // Show card reward screen if abilities available, otherwise go to map
     if (rewardAbilities.length > 0) {
       setGameState("slayCardReward");
@@ -3250,6 +3272,24 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
   };
   
+  // Navigate to next slay screen after card reward (handles act transitions)
+  const slayAfterCardReward = () => {
+    if (!slayMap) { setGameState("slayMap"); return; }
+    // Was the last node a boss?
+    const lastWasBoss = slayPendingNodeType === "boss";
+    if (lastWasBoss) {
+      if (slayMap.actNumber >= SLAY_TOTAL_ACTS) {
+        setGameState("slayVictory");
+      } else {
+        const nextAct = slayMap.actNumber + 1;
+        setSlayMap(generateMap(nextAct));
+        setGameState("slayActComplete");
+      }
+    } else {
+      setGameState("slayMap");
+    }
+  };
+
   // Handle selecting a card reward
   const handleSlayCardSelect = (ability: AbilityType) => {
     setUnlockedAbilities(prev => [...prev, { type: ability, upgradeCount: 0 }]);
@@ -3257,13 +3297,13 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (selectedAbilities.length < 4) {
       setSelectedAbilities(prev => [...prev, ability]);
     }
-    setGameState("slayMap");
+    slayAfterCardReward();
   };
   
   // Handle skipping card reward for gold
   const handleSlayCardSkip = () => {
     setSlayGold(prev => prev + SKIP_CARD_GOLD);
-    setGameState("slayMap");
+    slayAfterCardReward();
   };
   
   // Start battle from beach preview
@@ -5799,6 +5839,79 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         </div>
       )}
       
+      {/* Slay Act Complete */}
+      {gameState === "slayActComplete" && slayMap && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80">
+          <div className="bg-slate-800 rounded-xl p-8 max-w-md mx-4 text-center border-2 border-purple-500/50 shadow-2xl">
+            <h2 className="text-3xl font-display text-purple-400 mb-2">
+              Act {slayMap.actNumber - 1} Complete!
+            </h2>
+            <p className="text-white/70 mb-1">
+              {slayMap.actNumber === 2 ? "The Shallows conquered. The Deep awaits..." : "The Deep conquered. The Abyss awaits..."}
+            </p>
+            <p className="text-yellow-400 text-2xl font-mono font-bold my-4">
+              💰 {slayGold} gold
+            </p>
+            <p className="text-white/50 text-sm mb-6">
+              {unlockedAbilities.length} abilities • {selectedAbilities.length}/4 equipped
+            </p>
+            <Button
+              onClick={() => setGameState("slayMap")}
+              className="bg-purple-600 hover:bg-purple-500 text-white font-display px-8 py-4 text-lg"
+            >
+              Enter Act {slayMap.actNumber}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Slay Victory */}
+      {gameState === "slayVictory" && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80">
+          <div className="bg-slate-800 rounded-xl p-8 max-w-md mx-4 text-center border-2 border-yellow-500/50 shadow-2xl">
+            <h2 className="text-4xl font-display text-yellow-400 mb-2" style={{ textShadow: "0 0 30px hsla(45, 100%, 50%, 0.5)" }}>
+              🏆 Victory! 🏆
+            </h2>
+            <p className="text-white/70 mb-4">You conquered all three acts!</p>
+            <div className="py-4 bg-yellow-500/10 rounded-lg border border-yellow-500/20 mb-4">
+              <p className="text-yellow-400/70 text-xs uppercase tracking-widest mb-1">Final Score</p>
+              <p className="text-5xl font-display text-yellow-400 font-mono">
+                {totalScore.toLocaleString()}
+              </p>
+            </div>
+            <div className="flex justify-center gap-6 mb-4 text-sm">
+              <div>
+                <p className="text-white/50">Gold</p>
+                <p className="text-yellow-400 font-mono text-lg">{slayGold}</p>
+              </div>
+              <div>
+                <p className="text-white/50">Level</p>
+                <p className="text-purple-300 font-mono text-lg">{roguelikeLevel}</p>
+              </div>
+              <div>
+                <p className="text-white/50">Abilities</p>
+                <p className="text-cyan-300 font-mono text-lg">{unlockedAbilities.length}</p>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <Button
+                onClick={() => { setGameState("slayMenu"); }}
+                className="bg-yellow-600 hover:bg-yellow-500 text-white font-display px-6 py-3"
+              >
+                New Run
+              </Button>
+              <Button
+                variant="outline"
+                onClick={goToMenu}
+                className="border-white/30 text-white hover:bg-white/10 px-6 py-3"
+              >
+                Menu
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ============= END SLAY THE WAVES SCREENS ============= */}
 
       {/* Beach Selection Screen (Beach Bonanza mode) */}
