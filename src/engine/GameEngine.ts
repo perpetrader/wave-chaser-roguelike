@@ -101,11 +101,17 @@ export class GameEngine {
     this.waveMovementAccumulator = 0;
     this.lastFeetPosition = 35;
 
-    // Reset ability active states (keep cooldowns)
+    // Reset ability active states (create fresh objects to avoid immer freeze)
     for (const ability of this.state.selectedAbilities) {
-      const s = this.state.abilityStates[ability];
-      s.active = false;
-      s.durationRemaining = 0;
+      const old = this.state.abilityStates[ability];
+      this.state.abilityStates[ability] = {
+        active: false,
+        cooldownRemaining: 0,
+        durationRemaining: 0,
+        usesRemaining: old?.usesRemaining,
+        waterExposure: 0,
+        waterLimit: 0,
+      };
     }
 
     // Apply boss beach effect if pending
@@ -172,11 +178,8 @@ export class GameEngine {
 
   proceedToNextLevel(): void {
     const nextLevel = this.state.roguelikeLevel + 1;
-    console.log("[GameEngine] proceedToNextLevel:", nextLevel);
-    // Roll boss beach effect for the next level
     this.progressionSystem.rollBossBeachEffect(this.state);
     this.startLevel(nextLevel);
-    console.log("[GameEngine] startLevel done, gameState:", this.state.gameState);
   }
 
   // ─── Game Loop ──────────────────────────────────────────────────────────
@@ -334,7 +337,7 @@ export class GameEngine {
       feetPosition: s.feetPosition,
       isTapping: s.isTapping,
       momentumGear: s.momentumGear,
-      waves: [...s.waves],
+      waves: s.waves.map((w) => ({ ...w })),
       wavesTouched: s.wavesTouched,
       wavesMissed: s.wavesMissed,
       waterTimer: s.waterTimer,
@@ -349,7 +352,9 @@ export class GameEngine {
       // Phase 2: new fields
       selectedAbilities: [...s.selectedAbilities],
       unlockedAbilities: s.unlockedAbilities.map((a) => ({ ...a })),
-      abilityStates: { ...s.abilityStates },
+      abilityStates: Object.fromEntries(
+        Object.entries(s.abilityStates).map(([k, v]) => [k, { ...v }])
+      ) as typeof s.abilityStates,
       currentBeachEffect: s.currentBeachEffect,
       beachEffectLevel: s.beachEffectLevel,
       pendingBeachEffect: s.pendingBeachEffect,

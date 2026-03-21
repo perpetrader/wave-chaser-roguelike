@@ -82,18 +82,10 @@ export default function UpgradeScreen({ engine, onDone }: Props) {
     options.hasPermanentUpgrades;
 
   const handleUnlock = (type: AbilityType) => {
-    console.log("[UpgradeScreen] handleUnlock called:", type, "selected:", selected);
     if (selected) return;
     setSelected(true);
-    try {
-      engine.unlockAbility(type);
-      console.log("[UpgradeScreen] unlockAbility done, calling onDone");
-      onDone();
-      console.log("[UpgradeScreen] onDone complete");
-    } catch (e) {
-      console.error("[UpgradeScreen] Unlock failed:", e);
-      setSelected(false);
-    }
+    engine.unlockAbility(type);
+    onDone();
   };
 
   const handleUpgrade = (type: AbilityType) => {
