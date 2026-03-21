@@ -3976,20 +3976,27 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               height: PIXEL_SIZE,
               backgroundColor: color,
               boxShadow: cellBoxShadow,
-              outline: `1px solid ${color}`, // Prevent subpixel rendering gaps
-              position: (isTouchedCrest && showEffectsInLight) || isCrystalBallIndicator || isSpikeCell || (isMagnetCrest && showEffectsInLight) || isConeEdge ? "relative" : undefined,
+              outline: `1px solid ${color}`,
+              position: "relative",
               zIndex: isConeEdge ? 15 : isCrystalBallIndicator ? 20 : ((isTouchedCrest || isMagnetCrest) && showEffectsInLight) ? 10 : undefined,
             }}
           >
+            {/* Wave foam line: bright highlight at top of crest cells */}
+            {isCrest && showEffectsInLight && (
+              <div className="absolute left-0 right-0 top-0" style={{
+                height: 2,
+                backgroundColor: crestWave?.touched ? "hsla(160, 90%, 80%, 0.7)" : "hsla(180, 100%, 95%, 0.8)",
+              }} />
+            )}
             {/* Spike wave indicator - half-height silver bar at top of cell */}
             {isSpikeCell && (
               <div
                 className="absolute left-0 right-0 top-0 transition-colors duration-200"
                 style={{
                   height: PIXEL_SIZE / 2,
-                  backgroundColor: spikeFlashPhase === 0 
-                    ? "hsl(0, 0%, 70%)" // Silver (toned down)
-                    : "hsl(0, 0%, 80%)", // Lighter silver flash (reduced contrast)
+                  backgroundColor: spikeFlashPhase === 0
+                    ? "hsl(0, 0%, 70%)"
+                    : "hsl(0, 0%, 80%)",
                   boxShadow: `0 0 4px 1px hsl(0, 0%, ${spikeFlashPhase === 0 ? 55 : 65}%)`,
                   zIndex: 15,
                 }}
@@ -4112,6 +4119,15 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               borderRadius: ghostToe.active ? "0 0 4px 4px" : "4px",
             }}
           >
+            {/* Toe detail line */}
+            <div style={{
+              position: "absolute",
+              top: 2,
+              left: "50%",
+              width: 1,
+              height: footHeight * 0.3,
+              backgroundColor: "hsla(0, 0%, 0%, 0.15)",
+            }} />
             {/* Toe Warrior immunity line - dotted line at 35% from top */}
             {footType === "toeWarrior" && (
               <div
@@ -4157,6 +4173,15 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               borderRadius: ghostToe.active ? "0 0 4px 4px" : "4px",
             }}
           >
+            {/* Toe detail line */}
+            <div style={{
+              position: "absolute",
+              top: 2,
+              left: "50%",
+              width: 1,
+              height: footHeight * 0.3,
+              backgroundColor: "hsla(0, 0%, 0%, 0.15)",
+            }} />
             {/* Toe Warrior immunity line - dotted line at 35% from top */}
             {footType === "toeWarrior" && (
               <div
@@ -4299,11 +4324,63 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             style={{
               gridTemplateColumns: `repeat(${OCEAN_WIDTH}, ${PIXEL_SIZE}px)`,
               gridTemplateRows: `repeat(${TOTAL_HEIGHT}, ${PIXEL_SIZE}px)`,
-              backgroundColor: COLORS.sand, // Prevent subpixel rendering gaps
+              backgroundColor: COLORS.sand,
             }}
           >
             {renderGrid()}
           </div>
+
+          {/* Visual polish overlays (pointer-events-none so they don't block input) */}
+          {/* Ocean depth gradient */}
+          <div
+            className="absolute left-0 right-0 top-0 pointer-events-none"
+            style={{
+              height: OCEAN_HEIGHT * PIXEL_SIZE,
+              background: slowdown.active
+                ? "linear-gradient(to bottom, hsla(280, 50%, 20%, 0.5) 0%, transparent 60%, hsla(280, 40%, 55%, 0.15) 100%)"
+                : "linear-gradient(to bottom, hsla(200, 70%, 15%, 0.5) 0%, transparent 60%, hsla(190, 60%, 55%, 0.15) 100%)",
+            }}
+          />
+          {/* Ocean wave lines */}
+          <svg className="absolute left-0 top-0 pointer-events-none" width={OCEAN_WIDTH * PIXEL_SIZE} height={OCEAN_HEIGHT * PIXEL_SIZE} style={{ opacity: 0.12 }}>
+            {Array.from({ length: 8 }, (_, i) => {
+              const y = (i * 4 + 2) * PIXEL_SIZE;
+              const w = OCEAN_WIDTH * PIXEL_SIZE;
+              return (
+                <path
+                  key={i}
+                  d={`M 0 ${y} Q ${w * 0.25} ${y - 3} ${w * 0.5} ${y} Q ${w * 0.75} ${y + 3} ${w} ${y}`}
+                  stroke={slowdown.active ? "hsl(280, 40%, 70%)" : "hsl(190, 60%, 70%)"}
+                  strokeWidth="1.5"
+                  fill="none"
+                />
+              );
+            })}
+          </svg>
+          {/* Shoreline foam line */}
+          <div
+            className="absolute left-0 right-0 pointer-events-none"
+            style={{
+              top: (OCEAN_HEIGHT - 1) * PIXEL_SIZE + PIXEL_SIZE - 2,
+              height: 3,
+              background: "linear-gradient(to right, hsla(180, 80%, 85%, 0.0), hsla(180, 80%, 85%, 0.5) 20%, hsla(180, 80%, 85%, 0.5) 80%, hsla(180, 80%, 85%, 0.0))",
+            }}
+          />
+          {/* Sand depth gradient */}
+          <div
+            className="absolute left-0 right-0 pointer-events-none"
+            style={{
+              top: OCEAN_HEIGHT * PIXEL_SIZE,
+              height: BEACH_HEIGHT * PIXEL_SIZE,
+              background: "linear-gradient(to bottom, hsla(42, 40%, 55%, 0.3) 0%, transparent 25%, transparent 75%, hsla(42, 30%, 45%, 0.2) 100%)",
+            }}
+          />
+          {/* Sand grain texture lines */}
+          <svg className="absolute left-0 pointer-events-none" style={{ top: OCEAN_HEIGHT * PIXEL_SIZE }} width={OCEAN_WIDTH * PIXEL_SIZE} height={BEACH_HEIGHT * PIXEL_SIZE} opacity={0.08}>
+            {Array.from({ length: 6 }, (_, i) => (
+              <line key={i} x1="0" y1={(i * 2 + 1) * PIXEL_SIZE + 8} x2={OCEAN_WIDTH * PIXEL_SIZE} y2={(i * 2 + 1) * PIXEL_SIZE + 8} stroke="hsl(42, 30%, 45%)" strokeWidth="1" />
+            ))}
+          </svg>
           
           {/* Beach People (Busy Beach effect) */}
           {currentBeachEffect === "busyBeach" && beachPeople.map(person => (
@@ -6042,23 +6119,22 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       {gameState === "roguelikeGameOver" && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
           <div className="bg-slate-800 rounded-xl p-8 max-w-md mx-4 text-center border-2 border-purple-500/50 shadow-2xl">
-            <h2 className="text-3xl font-display text-purple-400 mb-2">
+            <h2 className="text-3xl font-display text-purple-400 mb-1">
               Run Over!
             </h2>
-            <p className="text-white/60 text-sm mb-2">Roguelike Mode</p>
-            <p className="text-white/80 mb-2">
-              {gameOverReason === "missed" 
-                ? "You missed too many waves!" 
+            <p className="text-white/50 text-sm mb-3">
+              {gameOverReason === "missed"
+                ? "You missed too many waves!"
                 : "Your feet got too soggy!"}
             </p>
-            
-            <div className="my-6 space-y-4">
-              <div>
-                <p className="text-white/60 text-sm uppercase tracking-wider">
+
+            <div className="my-4 space-y-4">
+              <div className="py-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
+                <p className="text-yellow-400/70 text-xs uppercase tracking-widest mb-1">
                   Final Score
                 </p>
-                <p className="text-4xl font-display text-yellow-400 font-mono">
-                  {totalScore}
+                <p className="text-5xl font-display text-yellow-400 font-mono" style={{ textShadow: "0 0 20px hsla(45, 100%, 50%, 0.3)" }}>
+                  {totalScore.toLocaleString()}
                 </p>
               </div>
               <div className="flex justify-center gap-6">
