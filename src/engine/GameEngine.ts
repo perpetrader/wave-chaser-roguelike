@@ -172,9 +172,11 @@ export class GameEngine {
 
   proceedToNextLevel(): void {
     const nextLevel = this.state.roguelikeLevel + 1;
+    console.log("[GameEngine] proceedToNextLevel:", nextLevel);
     // Roll boss beach effect for the next level
     this.progressionSystem.rollBossBeachEffect(this.state);
     this.startLevel(nextLevel);
+    console.log("[GameEngine] startLevel done, gameState:", this.state.gameState);
   }
 
   // ─── Game Loop ──────────────────────────────────────────────────────────

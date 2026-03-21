@@ -142,7 +142,10 @@ export default function GameScreen() {
         <canvas
           ref={canvasRef}
           className="block"
-          style={{ imageRendering: "pixelated" }}
+          style={{
+            imageRendering: "pixelated",
+            pointerEvents: gameState === "playing" ? "auto" : "none",
+          }}
         />
 
         {/* Menu overlay */}
