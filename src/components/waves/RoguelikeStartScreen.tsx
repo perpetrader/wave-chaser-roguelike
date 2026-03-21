@@ -286,9 +286,10 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       >
         <Swords className="w-5 h-5 mr-2" />
         {hasSavedRun ? "Start New Run" : (
-          selectedRunType === "beachBonanza" ? "Start Beach Bonanza" : 
+          selectedRunType === "beachBonanza" ? "Start Beach Bonanza" :
           selectedRunType === "bossQuickRun" ? "Start Boss Quick Run" :
           selectedRunType === "bossHellRun" ? "Start Boss Hell Run" :
+          selectedRunType === "slayTheWaves" ? "Start Slay the Waves" :
           "Start Standard Run"
         )}
       </Button>

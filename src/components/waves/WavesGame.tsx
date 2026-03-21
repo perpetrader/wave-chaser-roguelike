@@ -2720,9 +2720,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       // Also update the ref immediately to ensure game loop sees correct state
       usedBeachEffectsRef.current = [...usedBeachEffectsRef.current, pendingBeachEffect];
       setPendingBeachEffect(null);
-    } else if (isRoguelikeMode && levelToUse % 5 !== 0 && runTypeRef.current !== "beachBonanza") {
+    } else if (isRoguelikeMode && levelToUse % 5 !== 0 && runTypeRef.current !== "beachBonanza" && runTypeRef.current !== "slayTheWaves") {
       // Non-boss level in standard mode, clear any beach effect
-      // Beach Bonanza keeps the effect active through all 5 levels
+      // Beach Bonanza and Slay the Waves manage their own effects
       setBeachEffectWithRef(null);
     }
     
@@ -3070,6 +3070,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       const options = generateBeachOptions();
       setBeachOptions(options);
       setGameState("selectBeach");
+    } else if (runTypeValue === "slayTheWaves") {
+      // Slay the Waves has its own start screen and flow
+      setGameState("slayMenu");
     } else {
       // Start level with explicit roguelike flag and fully-reset bonuses/selection (avoid stale closure state)
       startLevel(1, true, 0, [], 0);
