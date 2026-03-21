@@ -5,6 +5,7 @@ import { OceanLayer } from "./layers/OceanLayer";
 import { BeachLayer } from "./layers/BeachLayer";
 import { WaveLayer } from "./layers/WaveLayer";
 import { PlayerLayer } from "./layers/PlayerLayer";
+import { EffectsLayer } from "./layers/EffectsLayer";
 
 /**
  * Main Canvas 2D renderer.
@@ -18,6 +19,7 @@ export class CanvasRenderer {
   private beachLayer: BeachLayer;
   private waveLayer: WaveLayer;
   private playerLayer: PlayerLayer;
+  private effectsLayer: EffectsLayer;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -37,6 +39,7 @@ export class CanvasRenderer {
     this.beachLayer = new BeachLayer();
     this.waveLayer = new WaveLayer();
     this.playerLayer = new PlayerLayer();
+    this.effectsLayer = new EffectsLayer();
   }
 
   /**
@@ -55,11 +58,7 @@ export class CanvasRenderer {
     this.beachLayer.render(ctx, state);
     this.waveLayer.render(ctx, state);
     this.playerLayer.render(ctx, state);
-
-    // TODO: Add in later phases:
-    // this.entityLayer.render(ctx, state);   // Beach people, fish net
-    // this.effectLayer.render(ctx, state);   // Nighttime, particles
-    // this.hudLayer.render(ctx, state);      // Gear meter
+    this.effectsLayer.render(ctx, state);
   }
 
   /**
@@ -70,13 +69,28 @@ export class CanvasRenderer {
     const { ctx } = this;
     const cellSize = Grid.CELL_SIZE;
 
-    // Ocean
-    ctx.fillStyle = COLORS.ocean;
-    ctx.fillRect(0, 0, Grid.WIDTH * cellSize, Grid.OCEAN_ROWS * cellSize);
+    // Ocean gradient
+    const oceanH = Grid.OCEAN_ROWS * cellSize;
+    const grad = ctx.createLinearGradient(0, 0, 0, oceanH);
+    grad.addColorStop(0, "hsl(200, 70%, 25%)");
+    grad.addColorStop(0.7, COLORS.ocean);
+    grad.addColorStop(1, "hsl(200, 60%, 45%)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, Grid.WIDTH * cellSize, oceanH);
 
-    // Beach
-    ctx.fillStyle = COLORS.sand;
-    ctx.fillRect(0, Grid.OCEAN_ROWS * cellSize, Grid.WIDTH * cellSize, Grid.BEACH_ROWS * cellSize);
+    // Beach gradient
+    const beachY = oceanH;
+    const beachH = Grid.BEACH_ROWS * cellSize;
+    const sandGrad = ctx.createLinearGradient(0, beachY, 0, beachY + beachH);
+    sandGrad.addColorStop(0, COLORS.sandDark);
+    sandGrad.addColorStop(0.3, COLORS.sand);
+    sandGrad.addColorStop(1, COLORS.sandDarker);
+    ctx.fillStyle = sandGrad;
+    ctx.fillRect(0, beachY, Grid.WIDTH * cellSize, beachH);
+
+    // Shoreline foam
+    ctx.fillStyle = "hsla(180, 80%, 80%, 0.4)";
+    ctx.fillRect(0, oceanH - 2, Grid.WIDTH * cellSize, 2);
   }
 
   destroy(): void {
