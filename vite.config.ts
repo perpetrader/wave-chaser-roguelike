@@ -6,6 +6,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: "/wave-chaser-roguelike/",
   server: {
     host: "::",
     port: 8080,
@@ -24,20 +25,20 @@ export default defineConfig(({ mode }) => ({
         background_color: "#0f172a",
         display: "standalone",
         orientation: "portrait",
-        start_url: "/",
+        start_url: "/wave-chaser-roguelike/",
         icons: [
           {
-            src: "/pwa-192x192.png",
+            src: "/wave-chaser-roguelike/pwa-192x192.png",
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/wave-chaser-roguelike/pwa-512x512.png",
             sizes: "512x512",
             type: "image/png",
           },
           {
-            src: "/pwa-512x512.png",
+            src: "/wave-chaser-roguelike/pwa-512x512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "maskable",

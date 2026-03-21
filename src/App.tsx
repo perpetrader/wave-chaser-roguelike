@@ -14,7 +14,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <AppErrorBoundary>
-        <BrowserRouter>
+        <BrowserRouter basename="/wave-chaser-roguelike">
           <Routes>
             <Route path="/" element={<WavesGame startInRoguelike />} />
           </Routes>
