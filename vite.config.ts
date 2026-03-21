@@ -17,9 +17,9 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "characters/*", "images/*"],
       manifest: {
-        name: "Dan's Arcade",
-        short_name: "Arcade",
-        description: "A collection of fun arcade games including Wave Chaser, Mastermind, and more!",
+        name: "Wave Chaser: Roguelike",
+        short_name: "Wave Chaser",
+        description: "Touch the waves without getting too wet! A roguelike wave chasing game.",
         theme_color: "#0f172a",
         background_color: "#0f172a",
         display: "standalone",
