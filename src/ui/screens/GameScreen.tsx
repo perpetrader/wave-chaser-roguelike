@@ -2,14 +2,14 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import { GameEngine } from "../../engine/GameEngine";
 import { useGameStore } from "../../store/gameStore";
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from "../../engine/data/constants";
-import type { AbilityType } from "../../engine/core/types";
+import type { AbilityType, MovementMode, RunType, FootType } from "../../engine/core/types";
 import AbilityHUD from "../components/AbilityHUD";
 import UpgradeScreen from "../components/UpgradeScreen";
 import GameOverScreen from "../components/GameOverScreen";
 import AbilitySelectScreen from "../components/AbilitySelectScreen";
 import TouchControls from "../components/TouchControls";
 import LevelCelebration from "../components/LevelCelebration";
-import StartScreen, { type StartConfig } from "./StartScreen";
+import StartScreen, { type ToeTapMode } from "./StartScreen";
 
 // Detect mobile/touch device
 const isTouchDevice = () => "ontouchstart" in window || navigator.maxTouchPoints > 0;
@@ -93,16 +93,16 @@ export default function GameScreen() {
 
   // ─── Handlers ───────────────────────────────────────────────────────────
 
-  const handleStart = useCallback((config: StartConfig) => {
+  const handleStart = useCallback((movementMode: MovementMode, runType: RunType, footType: FootType, toeTapMode: ToeTapMode) => {
     const engine = engineRef.current;
     if (!engine) return;
 
     // Apply config to engine state
     const state = engine.getState();
-    state.runType = config.runType;
-    state.movementMode = config.movementMode;
-    state.footType = config.footType;
-    state.autoToeTap = config.autoToeTap;
+    state.runType = runType;
+    state.movementMode = movementMode;
+    state.footType = footType;
+    state.autoToeTap = toeTapMode === "auto";
 
     setShowMenu(false);
     engine.startLevel(1);
