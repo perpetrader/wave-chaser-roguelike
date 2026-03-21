@@ -1,21 +1,22 @@
 import { GameLoop } from "./core/GameLoop";
-import type { WorldState, AbilityType } from "./core/types";
+import type {
+  WorldState,
+  AbilityType,
+  PermanentUpgradeType,
+} from "./core/types";
 import { WaveSystem } from "./systems/WaveSystem";
 import { PlayerSystem } from "./systems/PlayerSystem";
 import { CollisionSystem } from "./systems/CollisionSystem";
 import { WaterTimerSystem } from "./systems/WaterTimerSystem";
 import { ScoreSystem } from "./systems/ScoreSystem";
+import { AbilitySystem } from "./systems/AbilitySystem";
+import { BeachEffectSystem } from "./systems/BeachEffectSystem";
+import { ProgressionSystem, type UpgradeOptions } from "./systems/ProgressionSystem";
 import { InputSystem, type InputAction } from "./systems/InputSystem";
 import { CanvasRenderer } from "../renderer/CanvasRenderer";
 import { createDefaultWorldState, useGameStore } from "../store/gameStore";
-import {
-  OCEAN_HEIGHT,
-  TOTAL_HEIGHT,
-  ROGUELIKE_BASE_WATER_TIMER,
-  BOSS_QUICK_RUN_MAX_MISSES,
-  BOSS_HELL_RUN_MAX_MISSES,
-} from "./data/constants";
 import { getRoguelikeLevelSettings } from "./data/difficulties";
+import { BEACH_EFFECTS } from "./data/beachEffects";
 
 /**
  * GameEngine: The main orchestrator.
@@ -28,29 +29,25 @@ export class GameEngine {
   private renderer: CanvasRenderer | null = null;
 
   // Systems
-  private waveSystem: WaveSystem;
-  private playerSystem: PlayerSystem;
-  private collisionSystem: CollisionSystem;
-  private waterTimerSystem: WaterTimerSystem;
-  private scoreSystem: ScoreSystem;
+  private waveSystem = new WaveSystem();
+  private playerSystem = new PlayerSystem();
+  private collisionSystem = new CollisionSystem();
+  private waterTimerSystem = new WaterTimerSystem();
+  private scoreSystem = new ScoreSystem();
+  private abilitySystem = new AbilitySystem();
+  private beachEffectSystem = new BeachEffectSystem();
+  private progressionSystem = new ProgressionSystem();
   private inputSystem: InputSystem;
 
-  // Wave movement accumulator (waves move discretely, not every frame)
+  // Wave movement accumulator
   private waveMovementAccumulator = 0;
+
+  // Quicksand: track last feet position to detect movement
+  private lastFeetPosition = 0;
 
   constructor() {
     this.state = createDefaultWorldState();
-
-    // Initialize systems
-    this.waveSystem = new WaveSystem();
-    this.playerSystem = new PlayerSystem();
-    this.collisionSystem = new CollisionSystem();
-    this.waterTimerSystem = new WaterTimerSystem();
-    this.scoreSystem = new ScoreSystem();
-
     this.inputSystem = new InputSystem(this.handleInput.bind(this));
-
-    // Create game loop
     this.gameLoop = new GameLoop(
       this.update.bind(this),
       this.render.bind(this)
@@ -77,10 +74,6 @@ export class GameEngine {
 
   // ─── Game Flow ──────────────────────────────────────────────────────────
 
-  /**
-   * Start a new single level with basic roguelike settings.
-   * Phase 1: Simple sandbox mode. Later phases add full mode support.
-   */
   startLevel(level = 1): void {
     const levelConfig = getRoguelikeLevelSettings(level);
 
@@ -103,7 +96,31 @@ export class GameEngine {
     this.state.gameOverReason = null;
     this.state.roguelikeLevel = level;
     this.state.elapsedTime = 0;
+    this.state.waveSurferShield = 0;
+    this.state.waveSurferQueued = false;
     this.waveMovementAccumulator = 0;
+    this.lastFeetPosition = 35;
+
+    // Reset ability active states (keep cooldowns)
+    for (const ability of this.state.selectedAbilities) {
+      const s = this.state.abilityStates[ability];
+      s.active = false;
+      s.durationRemaining = 0;
+    }
+
+    // Apply boss beach effect if pending
+    if (this.state.pendingBeachEffect && level % 5 === 0) {
+      this.state.currentBeachEffect = this.state.pendingBeachEffect;
+      this.state.beachEffectLevel = 5;
+      this.state.usedBeachEffects.push(this.state.pendingBeachEffect);
+      this.state.pendingBeachEffect = null;
+    } else if (level % 5 !== 0) {
+      this.state.currentBeachEffect = null;
+      this.state.beachEffectLevel = 1;
+    }
+
+    // Reset beach effect substates
+    this.beachEffectSystem.resetSubstates(this.state);
 
     // Enable input and start loop
     this.inputSystem.setMomentumMode(this.state.movementMode === "momentum");
@@ -117,17 +134,76 @@ export class GameEngine {
     this.inputSystem.disable();
   }
 
-  // ─── Game Loop Callbacks ────────────────────────────────────────────────
+  // ─── Progression Methods (called from React UI) ─────────────────────────
+
+  getUpgradeOptions(): UpgradeOptions {
+    return this.progressionSystem.getUpgradeOptions(this.state);
+  }
+
+  unlockAbility(type: AbilityType): void {
+    this.progressionSystem.unlockAbility(this.state, type);
+    this.syncToStore();
+  }
+
+  upgradeAbility(type: AbilityType): void {
+    this.progressionSystem.upgradeAbility(this.state, type);
+    this.syncToStore();
+  }
+
+  addWaterTimeBonus(amount: number): void {
+    this.progressionSystem.addWaterTimeBonus(this.state, amount);
+    this.syncToStore();
+  }
+
+  addWavesMissedBonus(): void {
+    this.progressionSystem.addWavesMissedBonus(this.state);
+    this.syncToStore();
+  }
+
+  applyPermanentUpgrade(type: PermanentUpgradeType): void {
+    this.progressionSystem.applyPermanentUpgrade(this.state, type);
+    this.syncToStore();
+  }
+
+  selectAbilities(abilities: AbilityType[]): void {
+    this.state.selectedAbilities = abilities.slice(0, 4);
+    this.syncToStore();
+  }
+
+  proceedToNextLevel(): void {
+    const nextLevel = this.state.roguelikeLevel + 1;
+    // Roll boss beach effect for the next level
+    this.progressionSystem.rollBossBeachEffect(this.state);
+    this.startLevel(nextLevel);
+  }
+
+  // ─── Game Loop ──────────────────────────────────────────────────────────
 
   private update(dt: number): void {
     if (this.state.gameState !== "playing") return;
 
     this.state.elapsedTime += dt;
 
-    // Update momentum movement
+    // Track position for quicksand
+    const prevPosition = this.state.feetPosition;
+
+    // Update player momentum
     this.playerSystem.updateMomentum(this.state, dt);
 
-    // Calculate effective wave speed (for discrete wave movement)
+    // Update abilities (tick durations and cooldowns)
+    this.abilitySystem.update(this.state, dt);
+
+    // Update beach effects
+    this.beachEffectSystem.update(this.state, dt);
+
+    // Quicksand: detect movement
+    if (this.state.feetPosition !== prevPosition) {
+      this.beachEffectSystem.onPlayerMoved(this.state);
+    } else {
+      this.beachEffectSystem.onPlayerStill(this.state, dt);
+    }
+
+    // Calculate effective wave speed
     const slowdownMult = this.state.abilityStates.slowdown.active ? 2.5 : 1;
     let roughSpeedMult = 1;
     if (this.state.currentBeachEffect === "roughWaters") {
@@ -138,14 +214,14 @@ export class GameEngine {
     }
     const effectiveWaveSpeed = this.state.difficultySettings.waveSpeed * slowdownMult * roughSpeedMult;
 
-    // Accumulate time for wave movement
+    // Wave movement accumulator
     this.waveMovementAccumulator += dt;
     const shouldMoveWaves = this.waveMovementAccumulator >= effectiveWaveSpeed;
     if (shouldMoveWaves) {
       this.waveMovementAccumulator -= effectiveWaveSpeed;
     }
 
-    // Calculate effective peak duration and spawn interval
+    // Effective peak duration and spawn interval
     let roughPeakMult = 1;
     if (this.state.currentBeachEffect === "roughWaters") {
       const lvl = this.state.beachEffectLevel;
@@ -161,7 +237,6 @@ export class GameEngine {
       this.state, dt, shouldMoveWaves, effectivePeakDuration, effectiveSpawnInterval
     );
 
-    // Handle missed waves
     if (missed > 0) {
       this.state.wavesMissed += missed;
       this.checkMissedLoseCondition();
@@ -170,7 +245,6 @@ export class GameEngine {
     // Collision detection
     const { newTouches, isTouchingWater, isTouchingSpike } = this.collisionSystem.update(this.state);
 
-    // Handle touches
     if (newTouches > 0) {
       this.state.wavesTouched += newTouches;
       this.checkWinCondition();
@@ -191,9 +265,7 @@ export class GameEngine {
   }
 
   private render(_interpolation: number): void {
-    if (this.renderer) {
-      this.renderer.render(this.state);
-    }
+    this.renderer?.render(this.state);
   }
 
   // ─── Input Handling ─────────────────────────────────────────────────────
@@ -219,13 +291,13 @@ export class GameEngine {
         }
         break;
       case "activateAbility":
-        // Phase 2: ability activation
+        this.abilitySystem.activateBySlot(this.state, action.slot);
         break;
       case "flashlight":
-        // Phase 3: flashlight activation
+        this.beachEffectSystem.activateFlashlight(this.state);
         break;
       case "devSuperWave":
-        // Dev tool
+        // Dev tool — handled in Phase 3+
         break;
     }
   }
@@ -238,12 +310,13 @@ export class GameEngine {
       this.state.totalScore += this.state.levelScore;
       this.state.gameState = "levelComplete";
       this.stopLevel();
+      this.progressionSystem.rollBossBeachEffect(this.state);
+      this.syncToStore();
     }
   }
 
   private checkMissedLoseCondition(): void {
-    const maxMissed = this.state.wavesToLose;
-    if (this.state.wavesMissed >= maxMissed) {
+    if (this.state.wavesMissed >= this.state.wavesToLose) {
       this.state.gameOverReason = "missed";
       this.state.gameState = "roguelikeGameOver";
       this.stopLevel();
@@ -253,23 +326,36 @@ export class GameEngine {
   // ─── Store Sync ─────────────────────────────────────────────────────────
 
   private syncToStore(): void {
+    const s = this.state;
     useGameStore.getState().syncFromEngine({
-      gameState: this.state.gameState,
-      feetPosition: this.state.feetPosition,
-      isTapping: this.state.isTapping,
-      momentumGear: this.state.momentumGear,
-      waves: [...this.state.waves], // Shallow copy for immutability
-      wavesTouched: this.state.wavesTouched,
-      wavesMissed: this.state.wavesMissed,
-      waterTimer: this.state.waterTimer,
-      maxWaterTimer: this.state.maxWaterTimer,
-      wavesToWin: this.state.wavesToWin,
-      wavesToLose: this.state.wavesToLose,
-      gameOverReason: this.state.gameOverReason,
-      roguelikeLevel: this.state.roguelikeLevel,
-      levelScore: this.state.levelScore,
-      totalScore: this.state.totalScore,
-      elapsedTime: this.state.elapsedTime,
+      gameState: s.gameState,
+      feetPosition: s.feetPosition,
+      isTapping: s.isTapping,
+      momentumGear: s.momentumGear,
+      waves: [...s.waves],
+      wavesTouched: s.wavesTouched,
+      wavesMissed: s.wavesMissed,
+      waterTimer: s.waterTimer,
+      maxWaterTimer: s.maxWaterTimer,
+      wavesToWin: s.wavesToWin,
+      wavesToLose: s.wavesToLose,
+      gameOverReason: s.gameOverReason,
+      roguelikeLevel: s.roguelikeLevel,
+      levelScore: s.levelScore,
+      totalScore: s.totalScore,
+      elapsedTime: s.elapsedTime,
+      // Phase 2: new fields
+      selectedAbilities: [...s.selectedAbilities],
+      unlockedAbilities: s.unlockedAbilities.map((a) => ({ ...a })),
+      abilityStates: { ...s.abilityStates },
+      currentBeachEffect: s.currentBeachEffect,
+      beachEffectLevel: s.beachEffectLevel,
+      pendingBeachEffect: s.pendingBeachEffect,
+      permanentUpgrades: { ...s.permanentUpgrades },
+      waterTimeBonus: s.waterTimeBonus,
+      wavesMissedBonus: s.wavesMissedBonus,
+      fishNetStuck: s.fishNetStuck,
+      flashlightActive: s.flashlightActive,
     });
   }
 

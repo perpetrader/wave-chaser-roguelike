@@ -2,6 +2,8 @@ import { useRef, useEffect, useCallback } from "react";
 import { GameEngine } from "../../engine/GameEngine";
 import { useGameStore } from "../../store/gameStore";
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from "../../engine/data/constants";
+import AbilityHUD from "../components/AbilityHUD";
+import UpgradeScreen from "../components/UpgradeScreen";
 
 /**
  * GameScreen: Contains the canvas element and HUD overlays.
@@ -22,7 +24,10 @@ export default function GameScreen() {
   const maxWaterTimer = useGameStore((s) => s.maxWaterTimer);
   const gameOverReason = useGameStore((s) => s.gameOverReason);
   const levelScore = useGameStore((s) => s.levelScore);
+  const totalScore = useGameStore((s) => s.totalScore);
   const roguelikeLevel = useGameStore((s) => s.roguelikeLevel);
+  const fishNetStuck = useGameStore((s) => s.fishNetStuck);
+  const currentBeachEffect = useGameStore((s) => s.currentBeachEffect);
 
   // Initialize engine
   useEffect(() => {
@@ -59,17 +64,27 @@ export default function GameScreen() {
     return () => observer.disconnect();
   }, []);
 
-  // Start game handler
   const handleStart = useCallback(() => {
     engineRef.current?.startLevel(1);
   }, []);
 
-  // Restart handler
   const handleRestart = useCallback(() => {
-    engineRef.current?.startLevel(1);
+    useGameStore.getState().resetForNewGame();
+    engineRef.current?.destroy();
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const engine = new GameEngine();
+      engine.attachRenderer(canvas);
+      engineRef.current = engine;
+      engine.startLevel(1);
+    }
   }, []);
 
-  // Water timer percentage
+  const handleUpgradeDone = useCallback(() => {
+    engineRef.current?.proceedToNextLevel();
+  }, []);
+
+  // Water timer display
   const waterPercent = maxWaterTimer > 0 ? (waterTimer / maxWaterTimer) * 100 : 100;
   const waterTimerSec = (waterTimer / 1000).toFixed(1);
 
@@ -80,7 +95,7 @@ export default function GameScreen() {
         className="relative flex flex-col items-center justify-center"
         style={{ width: "100%", maxWidth: "400px", height: "90dvh" }}
       >
-        {/* HUD - above canvas */}
+        {/* HUD */}
         {gameState === "playing" && (
           <div className="w-full px-2 pb-2 space-y-1">
             {/* Water Timer Bar */}
@@ -97,18 +112,29 @@ export default function GameScreen() {
               </span>
             </div>
 
-            {/* Wave counter */}
+            {/* Wave counter + level + misses */}
             <div className="flex justify-between text-sm font-mono text-white/80">
-              <span>
-                🌊 {wavesTouched}/{wavesToWin}
-              </span>
+              <span>🌊 {wavesTouched}/{wavesToWin}</span>
               <span>
                 Level {roguelikeLevel}
+                {currentBeachEffect && (
+                  <span className="text-yellow-400 ml-1 text-xs">({currentBeachEffect})</span>
+                )}
               </span>
               <span className={wavesMissed > 0 ? "text-red-400" : ""}>
                 ❌ {wavesMissed}/{wavesToLose}
               </span>
             </div>
+
+            {/* Ability bar */}
+            <AbilityHUD />
+
+            {/* Fish Net stuck indicator */}
+            {fishNetStuck && (
+              <div className="text-center text-red-400 text-xs font-bold animate-pulse">
+                🕸️ STUCK!
+              </div>
+            )}
           </div>
         )}
 
@@ -132,25 +158,13 @@ export default function GameScreen() {
             >
               Play
             </button>
-            <p className="text-white/40 text-xs mt-4">↑↓ to move • Space to toe tap</p>
+            <p className="text-white/40 text-xs mt-4">↑↓ to move • Space to toe tap • C/V/B/N for abilities</p>
           </div>
         )}
 
-        {/* Level Complete overlay */}
-        {gameState === "levelComplete" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 z-10">
-            <h2 className="text-2xl font-bold text-green-400 mb-2">Level Complete!</h2>
-            <p className="text-white text-lg mb-1">Score: {levelScore}</p>
-            <p className="text-white/60 text-sm mb-6">
-              Touched {wavesTouched} waves • Missed {wavesMissed}
-            </p>
-            <button
-              onClick={() => engineRef.current?.startLevel(roguelikeLevel + 1)}
-              className="px-8 py-3 bg-green-500 hover:bg-green-400 text-white font-bold rounded-lg text-lg transition-colors"
-            >
-              Next Level
-            </button>
-          </div>
+        {/* Level Complete → Upgrade Screen */}
+        {gameState === "levelComplete" && engineRef.current && (
+          <UpgradeScreen engine={engineRef.current} onDone={handleUpgradeDone} />
         )}
 
         {/* Game Over overlay */}
@@ -161,7 +175,7 @@ export default function GameScreen() {
               {gameOverReason === "timer" ? "Water timer expired!" : "Too many waves missed!"}
             </p>
             <p className="text-white/60 text-sm mb-6">
-              Reached Level {roguelikeLevel} • Score: {levelScore}
+              Reached Level {roguelikeLevel} • Score: {totalScore}
             </p>
             <button
               onClick={handleRestart}
