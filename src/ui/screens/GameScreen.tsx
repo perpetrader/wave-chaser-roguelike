@@ -184,19 +184,9 @@ export default function GameScreen() {
   const isGameOver = gameState === "roguelikeGameOver";
   const isSelectAbilities = gameState === "selectAbilities";
 
-  // ─── Menu Screen ────────────────────────────────────────────────────────
-
-  if (showMenu) {
-    return (
-      <StartScreen
-        onStart={handleStart}
-        onContinue={handleContinueRun}
-        hasSavedRun={hasSavedRun}
-      />
-    );
-  }
-
-  // ─── Game Screen ────────────────────────────────────────────────────────
+  // ─── Render ─────────────────────────────────────────────────────────────
+  // Canvas always exists so the engine initializes on mount.
+  // Menu and game overlays are layered on top.
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-900 select-none">
@@ -205,6 +195,16 @@ export default function GameScreen() {
         className="relative flex flex-col items-center justify-center"
         style={{ width: "100%", maxWidth: "400px", height: "90dvh" }}
       >
+        {/* Menu overlay (covers canvas) */}
+        {showMenu && (
+          <div className="absolute inset-0 z-30">
+            <StartScreen
+              onStart={handleStart}
+              onContinue={handleContinueRun}
+              hasSavedRun={hasSavedRun}
+            />
+          </div>
+        )}
         {/* HUD */}
         {isPlaying && (
           <div className="w-full px-2 pb-2 space-y-1">

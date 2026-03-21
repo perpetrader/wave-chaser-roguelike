@@ -67,7 +67,7 @@ export default function StartScreen({ onStart, onContinue, hasSavedRun }: Props)
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-900 p-4">
+    <div className="flex flex-col items-center justify-center h-full bg-slate-900 p-4 overflow-y-auto">
       <div className="w-full max-w-sm space-y-4">
         {/* Title */}
         <div className="text-center mb-6">
