@@ -774,7 +774,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
   // Initialize and manage background music
   useEffect(() => {
-    audioRef.current = new Audio("/audio/waves-anguilla.m4a");
+    audioRef.current = new Audio(import.meta.env.BASE_URL + "audio/waves-anguilla.m4a");
     audioRef.current.loop = true;
     audioRef.current.volume = 0.3;
     
