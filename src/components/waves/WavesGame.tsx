@@ -4244,15 +4244,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             <ArrowLeft className="w-5 h-5" />
             <span className="hidden sm:inline">Pause & Save</span>
           </button>
-        ) : (
-          <Link
-            to="/"
-            className="flex items-center gap-2 text-white/80 hover:text-white transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="hidden sm:inline">Back to Games</span>
-          </Link>
-        )}
+        ) : null}
         <div className="text-center">
           <h1 className="text-2xl sm:text-3xl font-display text-cyan-400 drop-shadow-lg">
             Wave Chaser
@@ -5354,12 +5346,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       {/* Menu Screen - Difficulty Select */}
       {gameState === "menu" && (
         <div className="absolute inset-0 z-30 flex flex-col items-center bg-black/70 overflow-auto py-6 px-4">
-          <Link
-            to="/"
-            className="text-white/70 hover:text-white text-sm mb-4 transition-colors"
-          >
-            ← Back to Games
-          </Link>
           <h1 className="text-3xl sm:text-4xl font-display text-cyan-400 mb-2 drop-shadow-lg text-center">
             WAVE CHASER
           </h1>
@@ -5372,12 +5358,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       {/* Roguelike Start Screen */}
       {gameState === "roguelikeMenu" && (
         <div className="absolute inset-0 z-30 flex flex-col items-center bg-black/70 overflow-auto py-6 px-4">
-          <Link
-            to="/"
-            className="text-white/70 hover:text-white text-sm mb-4 transition-colors"
-          >
-            ← Back to Games
-          </Link>
           <h1 className="text-3xl sm:text-4xl font-display text-cyan-400 mb-2 drop-shadow-lg text-center">
             WAVE CHASER
           </h1>
@@ -5747,12 +5727,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       {/* Beach Selection Screen (Beach Bonanza mode) */}
       {gameState === "selectBeach" && (
         <div className="absolute inset-0 z-30 flex flex-col items-center bg-black/80 overflow-auto py-6 px-4">
-          <Link
-            to="/"
-            className="text-white/70 hover:text-white text-sm mb-4 transition-colors"
-          >
-            ← Back to Games
-          </Link>
           <h1 className="text-3xl sm:text-4xl font-display text-cyan-400 mb-2 drop-shadow-lg text-center">
             WAVE CHASER
           </h1>
@@ -6057,16 +6031,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 onClick={goToMenu}
                 className="border-white/30 text-white hover:bg-white/10 px-4 py-4"
               >
-                Change Difficulty
+                Menu
               </Button>
-              <Link to="/">
-                <Button
-                  variant="outline"
-                  className="border-white/30 text-white hover:bg-white/10 px-6 py-4"
-                >
-                  Back to Games
-                </Button>
-              </Link>
             </div>
           </div>
         </div>
@@ -6241,17 +6207,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 className="border-white/30 text-white hover:bg-white/10 px-4 py-4"
                 disabled={!gameOverReady}
               >
-                Change Mode
+                Menu
               </Button>
-              <Link to="/">
-                <Button
-                  variant="outline"
-                  className="border-white/30 text-white hover:bg-white/10 px-6 py-4"
-                  disabled={!gameOverReady}
-                >
-                  Back to Games
-                </Button>
-              </Link>
             </div>
             {!gameOverReady && (
               <p className="text-white/40 text-sm mt-4 animate-pulse">Please wait...</p>

@@ -94,15 +94,6 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       className="fixed inset-0 flex flex-col items-center gap-4 sm:gap-6 py-4 px-2 overflow-y-auto bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url(${roguelikeBg})` }}
     >
-      {/* Back to Games Link - Centered at Top */}
-      <Link
-        to="/"
-        className="flex items-center gap-2 text-white/80 hover:text-white transition-colors"
-      >
-        <ArrowLeft className="w-5 h-5" />
-        <span>Back to Games</span>
-      </Link>
-
       {/* Game intro */}
       <div className="flex flex-col items-center gap-2 text-center">
         <div className="flex items-center gap-2 text-amber-400 mb-1">
