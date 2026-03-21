@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { RunType, MovementMode, FootType } from "../../engine/core/types";
-import { SAVE_KEY_ROGUELIKE } from "../../engine/data/constants";
+import roguelikeBg from "../../assets/waves/roguelike-bg.png";
 
 interface Props {
   onStart: (config: StartConfig) => void;
@@ -67,8 +67,18 @@ export default function StartScreen({ onStart, onContinue, hasSavedRun }: Props)
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-slate-900 p-4 overflow-y-auto">
-      <div className="w-full max-w-sm space-y-4">
+    <div
+      className="flex flex-col items-center justify-center h-full p-4 overflow-y-auto"
+      style={{
+        backgroundImage: `url(${roguelikeBg})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      {/* Dark overlay for readability */}
+      <div className="absolute inset-0 bg-black/60" />
+
+      <div className="relative z-10 w-full max-w-sm space-y-4">
         {/* Title */}
         <div className="text-center mb-6">
           <h1
