@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppErrorBoundary } from "@/components/app/AppErrorBoundary";
-import WavesGame from "@/components/waves/WavesGame";
 import GameScreen from "@/ui/screens/GameScreen";
 
 const queryClient = new QueryClient();
@@ -17,8 +16,7 @@ const App = () => (
       <AppErrorBoundary>
         <BrowserRouter basename="/wave-chaser-roguelike">
           <Routes>
-            <Route path="/" element={<WavesGame startInRoguelike />} />
-            <Route path="/v2" element={<GameScreen />} />
+            <Route path="/" element={<GameScreen />} />
           </Routes>
         </BrowserRouter>
       </AppErrorBoundary>

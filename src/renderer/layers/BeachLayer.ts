@@ -28,6 +28,12 @@ export class BeachLayer {
       ctx.stroke();
     }
 
+    // Quicksand visual: brown tint when penalty active
+    if (state.currentBeachEffect === "quicksand" && state.quicksandPenaltyTimer > 0) {
+      ctx.fillStyle = "hsla(30, 50%, 30%, 0.25)";
+      ctx.fillRect(0, startY, width, beachRows * cellSize);
+    }
+
     // Crystal Ball indicator: dark sand line at upcoming wave's maxReach
     if (state.abilityStates?.crystalBall?.active) {
       // Show where the next wave will peak

@@ -8,6 +8,7 @@ import UpgradeScreen from "../components/UpgradeScreen";
 import GameOverScreen from "../components/GameOverScreen";
 import AbilitySelectScreen from "../components/AbilitySelectScreen";
 import TouchControls from "../components/TouchControls";
+import LevelCelebration from "../components/LevelCelebration";
 import StartScreen, { type StartConfig } from "./StartScreen";
 
 // Detect mobile/touch device
@@ -25,6 +26,7 @@ export default function GameScreen() {
   const [showMenu, setShowMenu] = useState(true);
   const [hasSavedRun, setHasSavedRun] = useState(false);
   const [isMobile] = useState(isTouchDevice);
+  const [celebrating, setCelebrating] = useState(false);
 
   // Store subscriptions
   const gameState = useGameStore((s) => s.gameState);
@@ -37,8 +39,17 @@ export default function GameScreen() {
   const roguelikeLevel = useGameStore((s) => s.roguelikeLevel);
   const currentBeachEffect = useGameStore((s) => s.currentBeachEffect);
   const fishNetStuck = useGameStore((s) => s.fishNetStuck);
+  const levelScore = useGameStore((s) => s.levelScore);
+  const totalScore = useGameStore((s) => s.totalScore);
   const unlockedAbilities = useGameStore((s) => s.unlockedAbilities);
   const selectedAbilities = useGameStore((s) => s.selectedAbilities);
+
+  // Trigger celebration when level completes
+  useEffect(() => {
+    if (gameState === "levelComplete") {
+      setCelebrating(true);
+    }
+  }, [gameState]);
 
   // Check for saved run on mount
   useEffect(() => {
@@ -245,8 +256,17 @@ export default function GameScreen() {
           <TouchControls inputSystem={engineRef.current.getInputSystem()} />
         )}
 
-        {/* Level Complete → Upgrade Screen */}
-        {isLevelComplete && engineRef.current && (
+        {/* Level celebration animation */}
+        {isLevelComplete && celebrating && (
+          <LevelCelebration
+            level={roguelikeLevel}
+            score={levelScore}
+            onComplete={() => setCelebrating(false)}
+          />
+        )}
+
+        {/* Level Complete → Upgrade Screen (shows after celebration) */}
+        {isLevelComplete && !celebrating && engineRef.current && (
           <UpgradeScreen engine={engineRef.current} onDone={handleUpgradeDone} />
         )}
 
