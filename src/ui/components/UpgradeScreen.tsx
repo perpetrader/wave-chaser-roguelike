@@ -56,9 +56,10 @@ const PERM_UPGRADE_INFO: Record<PermanentUpgradeType, { emoji: string; name: str
 interface Props {
   engine: GameEngine;
   onDone: () => void;
+  onSaveQuit?: () => void;
 }
 
-export default function UpgradeScreen({ engine, onDone }: Props) {
+export default function UpgradeScreen({ engine, onDone, onSaveQuit }: Props) {
   const levelScore = useGameStore((s) => s.levelScore);
   const totalScore = useGameStore((s) => s.totalScore);
   const roguelikeLevel = useGameStore((s) => s.roguelikeLevel);
@@ -262,6 +263,16 @@ export default function UpgradeScreen({ engine, onDone }: Props) {
           className="px-8 py-3 bg-green-500 hover:bg-green-400 text-white font-bold rounded-lg text-lg transition-colors mt-4"
         >
           Continue
+        </button>
+      )}
+
+      {/* Save & Quit */}
+      {onSaveQuit && (
+        <button
+          onClick={onSaveQuit}
+          className="w-full mt-4 py-2 bg-slate-700 hover:bg-slate-600 text-white/50 text-xs rounded-lg transition-colors"
+        >
+          💾 Save Run & Return to Menu
         </button>
       )}
     </div>

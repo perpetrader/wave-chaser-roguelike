@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import { GameEngine } from "../../engine/GameEngine";
 import { useGameStore } from "../../store/gameStore";
-import { CANVAS_WIDTH, CANVAS_HEIGHT, SAVE_KEY_ROGUELIKE } from "../../engine/data/constants";
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from "../../engine/data/constants";
 import type { AbilityType } from "../../engine/core/types";
 import AbilityHUD from "../components/AbilityHUD";
 import UpgradeScreen from "../components/UpgradeScreen";
@@ -53,10 +53,7 @@ export default function GameScreen() {
 
   // Check for saved run on mount
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(SAVE_KEY_ROGUELIKE);
-      setHasSavedRun(!!saved);
-    } catch { /* ignore */ }
+    setHasSavedRun(GameEngine.hasSavedRun());
   }, []);
 
   // Initialize engine (once)
@@ -112,11 +109,15 @@ export default function GameScreen() {
   }, []);
 
   const handleContinueRun = useCallback(() => {
-    // TODO: Implement full save/load. For now, just start fresh.
     const engine = engineRef.current;
     if (!engine) return;
     setShowMenu(false);
-    engine.startLevel(1);
+    const loaded = engine.loadSavedRun();
+    if (!loaded) {
+      // Fallback: start fresh if save is corrupted
+      engine.startLevel(1);
+    }
+    // loadSavedRun sets gameState to "levelComplete", triggering upgrade screen
   }, []);
 
   const handleUpgradeDone = useCallback(() => {
@@ -164,9 +165,15 @@ export default function GameScreen() {
   }, []);
 
   const handleSaveAndQuit = useCallback(() => {
-    // TODO: Full save implementation
-    handleBackToMenu();
-  }, [handleBackToMenu]);
+    const engine = engineRef.current;
+    if (engine) {
+      engine.saveRun();
+      engine.stopLevel();
+    }
+    useGameStore.getState().resetForNewGame();
+    setShowMenu(true);
+    setHasSavedRun(true);
+  }, []);
 
   // ─── Derived ────────────────────────────────────────────────────────────
 
@@ -267,7 +274,7 @@ export default function GameScreen() {
 
         {/* Level Complete → Upgrade Screen (shows after celebration) */}
         {isLevelComplete && !celebrating && engineRef.current && (
-          <UpgradeScreen engine={engineRef.current} onDone={handleUpgradeDone} />
+          <UpgradeScreen engine={engineRef.current} onDone={handleUpgradeDone} onSaveQuit={handleSaveAndQuit} />
         )}
 
         {/* Ability Selection (>4 abilities unlocked) */}

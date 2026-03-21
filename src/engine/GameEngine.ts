@@ -17,6 +17,8 @@ import { CanvasRenderer } from "../renderer/CanvasRenderer";
 import { createDefaultWorldState, useGameStore } from "../store/gameStore";
 import { getRoguelikeLevelSettings } from "./data/difficulties";
 import { BEACH_EFFECTS } from "./data/beachEffects";
+import { SaveSystem } from "./SaveSystem";
+import type { SavedRun } from "./core/types";
 
 /**
  * GameEngine: The main orchestrator.
@@ -364,6 +366,29 @@ export class GameEngine {
       fishNetStuck: s.fishNetStuck,
       flashlightActive: s.flashlightActive,
     });
+  }
+
+  // ─── Save/Load ──────────────────────────────────────────────────────────
+
+  saveRun(): void {
+    SaveSystem.saveRun(this.state);
+  }
+
+  loadSavedRun(): boolean {
+    const saved = SaveSystem.loadRun();
+    if (!saved) return false;
+
+    SaveSystem.applyToState(this.state, saved);
+    SaveSystem.deleteSave();
+
+    // Start at the saved level (show levelComplete so player sees upgrade screen)
+    this.state.gameState = "levelComplete";
+    this.syncToStore();
+    return true;
+  }
+
+  static hasSavedRun(): boolean {
+    return SaveSystem.hasSave();
   }
 
   // ─── Public Accessors ───────────────────────────────────────────────────
