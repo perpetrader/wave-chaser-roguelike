@@ -1,20 +1,32 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import { GameEngine } from "../../engine/GameEngine";
 import { useGameStore } from "../../store/gameStore";
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from "../../engine/data/constants";
+import { CANVAS_WIDTH, CANVAS_HEIGHT, SAVE_KEY_ROGUELIKE } from "../../engine/data/constants";
+import type { AbilityType } from "../../engine/core/types";
 import AbilityHUD from "../components/AbilityHUD";
 import UpgradeScreen from "../components/UpgradeScreen";
+import GameOverScreen from "../components/GameOverScreen";
+import AbilitySelectScreen from "../components/AbilitySelectScreen";
+import TouchControls from "../components/TouchControls";
+import StartScreen, { type StartConfig } from "./StartScreen";
+
+// Detect mobile/touch device
+const isTouchDevice = () => "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
 /**
- * GameScreen: Contains the canvas element and HUD overlays.
- * Creates and manages the GameEngine instance.
+ * GameScreen: Top-level screen that manages the full game lifecycle.
+ * Shows StartScreen → Canvas gameplay → UpgradeScreen → GameOverScreen.
  */
 export default function GameScreen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
-  // Subscribe to store for UI updates
+  const [showMenu, setShowMenu] = useState(true);
+  const [hasSavedRun, setHasSavedRun] = useState(false);
+  const [isMobile] = useState(isTouchDevice);
+
+  // Store subscriptions
   const gameState = useGameStore((s) => s.gameState);
   const wavesTouched = useGameStore((s) => s.wavesTouched);
   const wavesMissed = useGameStore((s) => s.wavesMissed);
@@ -22,14 +34,21 @@ export default function GameScreen() {
   const wavesToLose = useGameStore((s) => s.wavesToLose);
   const waterTimer = useGameStore((s) => s.waterTimer);
   const maxWaterTimer = useGameStore((s) => s.maxWaterTimer);
-  const gameOverReason = useGameStore((s) => s.gameOverReason);
-  const levelScore = useGameStore((s) => s.levelScore);
-  const totalScore = useGameStore((s) => s.totalScore);
   const roguelikeLevel = useGameStore((s) => s.roguelikeLevel);
-  const fishNetStuck = useGameStore((s) => s.fishNetStuck);
   const currentBeachEffect = useGameStore((s) => s.currentBeachEffect);
+  const fishNetStuck = useGameStore((s) => s.fishNetStuck);
+  const unlockedAbilities = useGameStore((s) => s.unlockedAbilities);
+  const selectedAbilities = useGameStore((s) => s.selectedAbilities);
 
-  // Initialize engine
+  // Check for saved run on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SAVE_KEY_ROGUELIKE);
+      setHasSavedRun(!!saved);
+    } catch { /* ignore */ }
+  }, []);
+
+  // Initialize engine (once)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -44,7 +63,7 @@ export default function GameScreen() {
     };
   }, []);
 
-  // Handle responsive canvas scaling
+  // Responsive canvas scaling
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
@@ -64,29 +83,102 @@ export default function GameScreen() {
     return () => observer.disconnect();
   }, []);
 
-  const handleStart = useCallback(() => {
-    engineRef.current?.startLevel(1);
+  // ─── Handlers ───────────────────────────────────────────────────────────
+
+  const handleStart = useCallback((config: StartConfig) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    // Apply config to engine state
+    const state = engine.getState();
+    state.runType = config.runType;
+    state.movementMode = config.movementMode;
+    state.footType = config.footType;
+    state.autoToeTap = config.autoToeTap;
+
+    setShowMenu(false);
+    engine.startLevel(1);
+  }, []);
+
+  const handleContinueRun = useCallback(() => {
+    // TODO: Implement full save/load. For now, just start fresh.
+    const engine = engineRef.current;
+    if (!engine) return;
+    setShowMenu(false);
+    engine.startLevel(1);
+  }, []);
+
+  const handleUpgradeDone = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    const state = engine.getState();
+    // If player has >4 abilities and hasn't selected 4, show selection screen
+    if (state.unlockedAbilities.length > 4 && state.selectedAbilities.length < 4) {
+      // GameEngine will set gameState to selectAbilities
+      // For now, just proceed
+    }
+    engine.proceedToNextLevel();
+  }, []);
+
+  const handleAbilitySelect = useCallback((abilities: AbilityType[]) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    engine.selectAbilities(abilities);
+    engine.proceedToNextLevel();
   }, []);
 
   const handleRestart = useCallback(() => {
     useGameStore.getState().resetForNewGame();
-    engineRef.current?.destroy();
+    const engine = engineRef.current;
+    if (!engine) return;
+    // Recreate engine state
     const canvas = canvasRef.current;
     if (canvas) {
-      const engine = new GameEngine();
-      engine.attachRenderer(canvas);
-      engineRef.current = engine;
-      engine.startLevel(1);
+      engine.destroy();
+      const newEngine = new GameEngine();
+      newEngine.attachRenderer(canvas);
+      engineRef.current = newEngine;
     }
+    setShowMenu(true);
   }, []);
 
-  const handleUpgradeDone = useCallback(() => {
-    engineRef.current?.proceedToNextLevel();
+  const handleBackToMenu = useCallback(() => {
+    const engine = engineRef.current;
+    if (engine) {
+      engine.stopLevel();
+    }
+    useGameStore.getState().resetForNewGame();
+    setShowMenu(true);
   }, []);
 
-  // Water timer display
+  const handleSaveAndQuit = useCallback(() => {
+    // TODO: Full save implementation
+    handleBackToMenu();
+  }, [handleBackToMenu]);
+
+  // ─── Derived ────────────────────────────────────────────────────────────
+
   const waterPercent = maxWaterTimer > 0 ? (waterTimer / maxWaterTimer) * 100 : 100;
   const waterTimerSec = (waterTimer / 1000).toFixed(1);
+  const isPlaying = gameState === "playing";
+  const isLevelComplete = gameState === "levelComplete";
+  const isGameOver = gameState === "roguelikeGameOver";
+  const isSelectAbilities = gameState === "selectAbilities";
+
+  // ─── Menu Screen ────────────────────────────────────────────────────────
+
+  if (showMenu) {
+    return (
+      <StartScreen
+        onStart={handleStart}
+        onContinue={handleContinueRun}
+        hasSavedRun={hasSavedRun}
+      />
+    );
+  }
+
+  // ─── Game Screen ────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-900 select-none">
@@ -96,7 +188,7 @@ export default function GameScreen() {
         style={{ width: "100%", maxWidth: "400px", height: "90dvh" }}
       >
         {/* HUD */}
-        {gameState === "playing" && (
+        {isPlaying && (
           <div className="w-full px-2 pb-2 space-y-1">
             {/* Water Timer Bar */}
             <div className="relative h-4 bg-slate-700 rounded-full overflow-hidden">
@@ -116,9 +208,9 @@ export default function GameScreen() {
             <div className="flex justify-between text-sm font-mono text-white/80">
               <span>🌊 {wavesTouched}/{wavesToWin}</span>
               <span>
-                Level {roguelikeLevel}
+                Lv {roguelikeLevel}
                 {currentBeachEffect && (
-                  <span className="text-yellow-400 ml-1 text-xs">({currentBeachEffect})</span>
+                  <span className="text-yellow-400 ml-1 text-xs">⚠</span>
                 )}
               </span>
               <span className={wavesMissed > 0 ? "text-red-400" : ""}>
@@ -144,49 +236,32 @@ export default function GameScreen() {
           className="block"
           style={{
             imageRendering: "pixelated",
-            pointerEvents: gameState === "playing" ? "auto" : "none",
+            pointerEvents: isPlaying ? "auto" : "none",
           }}
         />
 
-        {/* Menu overlay */}
-        {gameState === "menu" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 z-10">
-            <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: "'Russo One', sans-serif" }}>
-              Wave Chaser
-            </h1>
-            <p className="text-white/60 text-sm mb-6">Touch the waves without getting too wet!</p>
-            <button
-              onClick={handleStart}
-              className="px-8 py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-bold rounded-lg text-lg transition-colors"
-            >
-              Play
-            </button>
-            <p className="text-white/40 text-xs mt-4">↑↓ to move • Space to toe tap • C/V/B/N for abilities</p>
-          </div>
+        {/* Mobile touch controls */}
+        {isPlaying && isMobile && engineRef.current && (
+          <TouchControls inputSystem={engineRef.current.getInputSystem()} />
         )}
 
         {/* Level Complete → Upgrade Screen */}
-        {gameState === "levelComplete" && engineRef.current && (
+        {isLevelComplete && engineRef.current && (
           <UpgradeScreen engine={engineRef.current} onDone={handleUpgradeDone} />
         )}
 
-        {/* Game Over overlay */}
-        {gameState === "roguelikeGameOver" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 z-10">
-            <h2 className="text-2xl font-bold text-red-400 mb-2">Game Over</h2>
-            <p className="text-white/80 text-sm mb-1">
-              {gameOverReason === "timer" ? "Water timer expired!" : "Too many waves missed!"}
-            </p>
-            <p className="text-white/60 text-sm mb-6">
-              Reached Level {roguelikeLevel} • Score: {totalScore}
-            </p>
-            <button
-              onClick={handleRestart}
-              className="px-8 py-3 bg-red-500 hover:bg-red-400 text-white font-bold rounded-lg text-lg transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
+        {/* Ability Selection (>4 abilities unlocked) */}
+        {isSelectAbilities && (
+          <AbilitySelectScreen
+            unlockedAbilities={unlockedAbilities}
+            currentSelected={selectedAbilities}
+            onConfirm={handleAbilitySelect}
+          />
+        )}
+
+        {/* Game Over */}
+        {isGameOver && (
+          <GameOverScreen onRestart={handleRestart} onMenu={handleBackToMenu} />
         )}
       </div>
     </div>
