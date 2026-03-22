@@ -11,6 +11,7 @@ interface BeachPreviewScreenProps {
   beachType: BeachType;
   nodeType: MapNodeType;
   gold: number;
+  actNumber: number;
   onStart: () => void;
 }
 
@@ -20,16 +21,23 @@ const NODE_TYPE_INFO: Record<"beach" | "elite" | "boss", { label: string; icon: 
   boss: { label: "Boss Beach", icon: <Crown className="w-8 h-8" />, color: "text-red-400" },
 };
 
-const BeachPreviewScreen = ({ beachType, nodeType, gold, onStart }: BeachPreviewScreenProps) => {
+const DIFFICULTY_LABELS: Record<"beach" | "elite" | "boss", string> = {
+  beach: "Mild Effect",
+  elite: "Strong Effect",
+  boss: "Full Boss Effect",
+};
+
+const BeachPreviewScreen = ({ beachType, nodeType, gold, actNumber, onStart }: BeachPreviewScreenProps) => {
   const beachInfo = BEACH_INFO[beachType];
   const colors = BEACH_COLORS[beachType];
   const typeInfo = NODE_TYPE_INFO[nodeType as "beach" | "elite" | "boss"] || NODE_TYPE_INFO.beach;
   
   return (
     <div className="flex flex-col items-center gap-6 p-6 w-full max-w-md mx-auto">
-      {/* Gold display */}
-      <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-900/80 px-3 py-1.5 rounded-lg border border-yellow-500/30">
-        <span className="text-yellow-400 font-bold">💰 {gold}</span>
+      {/* Top bar: Act + Gold */}
+      <div className="w-full flex justify-between items-center">
+        <span className="text-white/50 text-sm font-bold">Act {actNumber}</span>
+        <span className="text-yellow-400 font-bold text-sm">💰 {gold}</span>
       </div>
       
       {/* Node type header */}
@@ -53,6 +61,9 @@ const BeachPreviewScreen = ({ beachType, nodeType, gold, onStart }: BeachPreview
           <p className="text-sm text-white/60 uppercase tracking-wider mb-1">Beach Effect</p>
           <p className={cn("text-lg font-medium", colors.text)}>
             {beachInfo.effectDescription}
+          </p>
+          <p className="text-xs text-white/40 mt-2">
+            Intensity: {DIFFICULTY_LABELS[nodeType as "beach" | "elite" | "boss"] || "Mild Effect"}
           </p>
         </div>
         

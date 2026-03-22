@@ -293,6 +293,46 @@ const getRoguelikeLevelSettings = (level: number, lastUpgradeLevel: number = 0):
   };
 };
 
+// ─── Slay the Waves difficulty settings ────────────────────────────────────
+// Separate from standard roguelike progression. Scales by act (1-3) and node type.
+const getSlayBattleSettings = (
+  actNumber: number,
+  nodeType: "beach" | "elite" | "boss",
+  waterTimeBonus: number = 0,
+  wavesMissedBonus: number = 0,
+): {
+  settings: DifficultySettings;
+  wavesToWin: number;
+  wavesToLose: number;
+  waterTimer: number;
+  beachEffectLevel: number; // 1-5 intensity for the beach effect
+} => {
+  // Act scaling: 10% harder per act (act 1 = 1.0, act 2 = 0.90, act 3 = 0.81)
+  const actScaling = Math.pow(0.90, actNumber - 1);
+
+  // Node type modifiers
+  const nodeModifiers = {
+    beach: { speedMult: 1.0, wavesToWin: 5, wavesToLose: 5, timerBase: 6000, effectLevel: 2 },
+    elite: { speedMult: 0.85, wavesToWin: 7, wavesToLose: 4, timerBase: 5500, effectLevel: 4 },
+    boss:  { speedMult: 0.75, wavesToWin: 10, wavesToLose: 3, timerBase: 5000, effectLevel: 5 },
+  };
+
+  const mod = nodeModifiers[nodeType];
+  const combinedScaling = actScaling * mod.speedMult;
+
+  return {
+    settings: {
+      waveSpawnInterval: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpawnInterval * combinedScaling),
+      wavePeakDuration: Math.round(ROGUELIKE_BASE_SETTINGS.wavePeakDuration * combinedScaling),
+      waveSpeed: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpeed * combinedScaling),
+    },
+    wavesToWin: mod.wavesToWin + (actNumber - 1), // +1 wave per act
+    wavesToLose: Math.max(1, mod.wavesToLose + wavesMissedBonus),
+    waterTimer: Math.round(mod.timerBase * actScaling) + waterTimeBonus,
+    beachEffectLevel: mod.effectLevel,
+  };
+};
+
 interface WavesGameProps {
   startInRoguelike?: boolean;
 }
@@ -424,6 +464,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const [slayCardRewardAbilities, setSlayCardRewardAbilities] = useState<AbilityType[]>([]);
   const [slayHasRested, setSlayHasRested] = useState(false);
   const [slayPendingNodeType, setSlayPendingNodeType] = useState<"beach" | "elite" | "boss">("beach");
+  const slayBattleSettingsRef = useRef<DifficultySettings | null>(null); // Slay-specific wave speed/timing for current battle
   const [slayHasSavedRun, setSlayHasSavedRun] = useState(false);
   const SLAY_SAVED_RUN_KEY = "waveChaser_slayTheWavesSavedRun";
   
@@ -748,7 +789,12 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (runTypeRef.current === "bossQuickRun" || runTypeRef.current === "bossHellRun") {
       return BOSS_QUICK_RUN_SETTINGS;
     }
-    
+
+    // Slay the Waves uses its own per-battle settings
+    if (runTypeRef.current === "slayTheWaves" && slayBattleSettingsRef.current) {
+      return slayBattleSettingsRef.current;
+    }
+
     if (isRoguelikeRef.current) {
       return getRoguelikeLevelSettings(roguelikeLevelRef.current).settings;
     }
@@ -952,9 +998,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
   }, []);
 
-  // Helper to check if current level uses reduced beach effects (Beach Bonanza levels 1-4)
+  // Helper to check if current run uses leveled beach effects (Beach Bonanza 1-5, Slay 2/4/5)
+  // When true AND beachLevelRef < 5, effects use reduced intensity.
+  // When true AND beachLevelRef >= 5, effects use boss intensity.
+  const hasLeveledBeachEffects = (): boolean => {
+    return runTypeRef.current === "beachBonanza" || runTypeRef.current === "slayTheWaves";
+  };
   const isReducedEffectLevel = useCallback((): boolean => {
-    return runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+    return hasLeveledBeachEffects() && beachLevelRef.current < 5;
   }, []);
 
   // Helper to generate two random beach options for selection
@@ -1049,7 +1100,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       
       // Rough Waters: scales across levels 1-4 (20%/10% → 30%/20% → 40%/30% → 50%/40%), boss = 75%/50%
       const isRoughWaters = currentBeachEffectRef.current === "roughWaters";
-      const isReducedRoughWaters = isRoughWaters && runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+      const isReducedRoughWaters = isRoughWaters && hasLeveledBeachEffects() && beachLevelRef.current < 5;
       let roughWatersSpeedMultiplier = 1;
       let roughWatersPeakMultiplier = 1;
       if (isRoughWaters) {
@@ -1088,7 +1139,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         let crazyWavesMultiplier = 1;
         if (isCrazyWaves) {
           const levelMultipliers = [1.2, 1.4, 1.6, 2, 3];
-          const level = runTypeRef.current === "beachBonanza" ? beachLevelRef.current : 5;
+          const level = hasLeveledBeachEffects() ? beachLevelRef.current : 5;
           crazyWavesMultiplier = levelMultipliers[level - 1] || 3;
         }
         const waveVariance = isCrazyWaves 
@@ -1216,7 +1267,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       
       if (autoToeTapRef.current && !isTappingRef.current) {
         const isGummyBeachAutoTap = currentBeachEffectRef.current === "gummyBeach";
-        const isGummyBoss = isGummyBeachAutoTap && !(runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5);
+        const isGummyBoss = isGummyBeachAutoTap && !(hasLeveledBeachEffects() && beachLevelRef.current < 5);
         
         // Don't auto-tap if Gummy Beach boss blocks toe tap
         if (!isGummyBoss) {
@@ -1256,7 +1307,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           const isGummyBeachRelease = currentBeachEffectRef.current === "gummyBeach";
           const tapDancerMultRelease = 1 + (permanentUpgradesRef.current.tapDancer * 0.15);
           let currentToeExtension = 0.5 * tapDancerMultRelease;
-          if (isGummyBeachRelease && runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5) {
+          if (isGummyBeachRelease && hasLeveledBeachEffects() && beachLevelRef.current < 5) {
             const levelMultipliers = [0.60, 0.50, 0.40, 0.30];
             currentToeExtension *= levelMultipliers[beachLevelRef.current - 1] || 0.30;
           }
@@ -1281,7 +1332,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       setWaves((prev) => {
         // Gummy Beach: boss blocks toe tap entirely, non-boss reduces it
         const isGummyBeachActive = currentBeachEffectRef.current === "gummyBeach";
-        const isGummyBoss = isGummyBeachActive && (runTypeRef.current !== "beachBonanza" || beachLevelRef.current >= 5);
+        const isGummyBoss = isGummyBeachActive && (!hasLeveledBeachEffects() || beachLevelRef.current >= 5);
         // Calculate toe position with super tap multiplier
         // Tap Dancer permanent upgrade: +15% toe tap distance per upgrade
         const tapDancerMultiplier = 1 + (permanentUpgradesRef.current.tapDancer * 0.15);
@@ -1772,7 +1823,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         const shouldDrain = (touching || isTouchingSpike) && !invincibleRef.current.active && waveSurferShieldRef.current <= 0;
         if (shouldDrain) {
           const isColdWater = currentBeachEffectRef.current === "coldWater";
-          const isReducedColdWater = isColdWater && runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+          const isReducedColdWater = isColdWater && hasLeveledBeachEffects() && beachLevelRef.current < 5;
           let coldWaterMultiplier = 2; // Boss level default (100% faster)
           if (isReducedColdWater) {
             const levelMultipliers = [1.2, 1.3, 1.4, 1.6]; // 20%, 30%, 40%, 60% faster
@@ -1782,7 +1833,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           
           // Spike Waves: scales across levels 1-4 (20% → 30% → 40% → 60%), boss = 100%
           const isSpikeWaves = currentBeachEffectRef.current === "spikeWaves";
-          const isReducedSpikeWaves = isSpikeWaves && runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+          const isReducedSpikeWaves = isSpikeWaves && hasLeveledBeachEffects() && beachLevelRef.current < 5;
           let spikeDrainRate = 1; // Boss level = 100%
           if (isTouchingSpike && isReducedSpikeWaves) {
             const levelRates = [0.2, 0.3, 0.4, 0.6];
@@ -1830,7 +1881,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         
         // Fish Net effect: scales across levels 1-4 (0.3s/7s → 0.4s/6s → 0.5s/5s → 0.7s/4s), boss = 1s/3s
         if (currentBeachEffectRef.current === "fishNet") {
-          const isReducedFishNet = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+          const isReducedFishNet = hasLeveledBeachEffects() && beachLevelRef.current < 5;
           let stuckDuration = 1000; // Boss level
           let stuckInterval = 3000; // Boss level
           if (isReducedFishNet) {
@@ -1858,7 +1909,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         
         // Quicksand effect: Level 1 (0.7s/0.8s/40%) → Level 2 (0.6s/0.9s/50%) → Level 3 (0.5s/1.0s/60%) → Level 4 (0.4s/1.2s/70%) → Boss (0.2s/1.5s/80%)
         if (currentBeachEffectRef.current === "quicksand") {
-          const isReducedQuicksand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+          const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
           let stillTriggerTime = 200; // Boss level = 0.2s
           let penaltyDuration = 1500; // Boss level = 1.5s
           if (isReducedQuicksand) {
@@ -1912,7 +1963,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         // Busy Beach effect: scales across levels 1-4 (6s → 5s → 4.5s → 4s), boss = 3s
         if (currentBeachEffectRef.current === "busyBeach") {
           // First person spawns after 1 second (timer starts at spawnInterval - 1000)
-          const isReducedBusyBeach = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+          const isReducedBusyBeach = hasLeveledBeachEffects() && beachLevelRef.current < 5;
           let spawnInterval = 1500; // Boss level = every 1.5s
           let rowStart = 32;
           let rowRange = 6; // rows 32-37
@@ -2253,7 +2304,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (superTap.active || superTap.cooldownRemaining > 0) return;
     // Gummy Beach effect: can't use Super Tap on boss level
     const isGummyBoss = currentBeachEffectRef.current === "gummyBeach" && 
-      (runTypeRef.current !== "beachBonanza" || beachLevelRef.current >= 5);
+      (!hasLeveledBeachEffects() || beachLevelRef.current >= 5);
     if (isGummyBoss) return;
     const value = getAbilityDuration("superTap");
     // In roguelike, super tap is duration-based; in classic it's uses-based
@@ -2326,7 +2377,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (flashlightActive || flashlightCooldown > 0) return;
     setFlashlightActive(true);
     // Nighttime: scales across levels 1-4 (30s → 25s → 20s → 15s), boss = 10s
-    const isReducedNighttime = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+    const isReducedNighttime = hasLeveledBeachEffects() && beachLevelRef.current < 5;
     let duration = FLASHLIGHT_DURATION_BOSS; // 10s boss
     if (isReducedNighttime) {
       const levelDurations = [30000, 25000, 20000, 15000];
@@ -2398,7 +2449,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     let moveStep = jumpAroundRef.current.active ? baseStep * JUMP_AROUND_MULTIPLIER : baseStep;
                   if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
                     // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-                    const isReducedQuicksand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+                    const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
                     const levelPenalties = [0.60, 0.50, 0.40, 0.30]; // 40%, 50%, 60%, 70% slower
                     const penaltyMultiplier = isReducedQuicksand 
                       ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
@@ -2407,7 +2458,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   }
     if (currentBeachEffectRef.current === "heavySand") {
       // Heavy Sand: scales across levels 1-4 (10% → 20% → 30% → 40%), boss = 65%
-      const isReducedHeavySand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+      const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
       let heavySandPenalty = 0.35; // Boss = 65% less
       if (isReducedHeavySand) {
         const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
@@ -2457,7 +2508,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     let moveStep = jumpAroundRef.current.active ? baseStep * JUMP_AROUND_MULTIPLIER : baseStep;
     if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
       // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-      const isReducedQuicksand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+      const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
       const levelPenalties = [0.60, 0.50, 0.40, 0.30]; // 40%, 50%, 60%, 70% slower
       const penaltyMultiplier = isReducedQuicksand 
         ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
@@ -2466,7 +2517,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
     if (currentBeachEffectRef.current === "heavySand") {
       // Heavy Sand: scales across levels 1-4 (10% → 20% → 30% → 40%), boss = 65%
-      const isReducedHeavySand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+      const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
       let heavySandPenalty = 0.35; // Boss = 65% less
       if (isReducedHeavySand) {
         const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
@@ -2526,7 +2577,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     // Apply beach effect penalties
     if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
       // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-      const isReducedQuicksand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+      const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
       const levelPenalties = [0.60, 0.50, 0.40, 0.30]; // 40%, 50%, 60%, 70% slower
       const penaltyMultiplier = isReducedQuicksand 
         ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
@@ -2535,7 +2586,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
     if (currentBeachEffectRef.current === "heavySand") {
       // Heavy Sand: scales across levels 1-4 (10% → 20% → 30% → 40%), boss = 65%
-      const isReducedHeavySand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+      const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
       let heavySandPenalty = 0.35; // Boss = 65% less
       if (isReducedHeavySand) {
         const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
@@ -2611,7 +2662,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         // Gummy Beach effect: can't toe tap on boss level, reduced distance on non-boss
         // Auto toe tap mode: disable manual toe tapping
         const isGummyBoss = currentBeachEffectRef.current === "gummyBeach" && 
-          (runTypeRef.current !== "beachBonanza" || beachLevelRef.current >= 5);
+          (!hasLeveledBeachEffects() || beachLevelRef.current >= 5);
         if (!isGummyBoss && !autoToeTapRef.current) {
           setIsTapping(true);
           if (isRoguelike) setTotalToeTaps(t => t + 1);
@@ -3309,12 +3360,24 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     slayAfterCardReward();
   };
   
-  // Start battle from beach preview
+  // Start battle from beach preview (uses Slay-specific difficulty)
   const handleSlayStartBattle = () => {
-    const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(roguelikeLevel);
-    setRoguelikeWavesToWin(wavesToWin);
-    setRoguelikeWavesToLose(Math.max(1, wavesToLose + wavesMissedBonus));
-    startLevel(roguelikeLevel, true, waterTimeBonus, selectedAbilities.length > 0 ? selectedAbilities : undefined, wavesMissedBonus);
+    const actNumber = slayMap?.actNumber ?? 1;
+    const battleSettings = getSlayBattleSettings(actNumber, slayPendingNodeType as "beach" | "elite" | "boss", waterTimeBonus, wavesMissedBonus);
+
+    setRoguelikeWavesToWin(battleSettings.wavesToWin);
+    setRoguelikeWavesToLose(battleSettings.wavesToLose);
+
+    // Set beach effect intensity based on node type (2=mild, 4=strong, 5=boss)
+    setBeachLevel(battleSettings.beachEffectLevel);
+    beachLevelRef.current = battleSettings.beachEffectLevel;
+
+    // Store Slay-specific wave speed/timing so getCurrentSettings uses it
+    slayBattleSettingsRef.current = battleSettings.settings;
+
+    // Pass the slay-specific water timer as a bonus offset from the base
+    const waterTimerOffset = battleSettings.waterTimer - ROGUELIKE_BASE_WATER_TIMER;
+    startLevel(roguelikeLevel, true, waterTimerOffset, selectedAbilities.length > 0 ? selectedAbilities : undefined, wavesMissedBonus);
   };
   
   // Shop handlers
@@ -5298,7 +5361,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   moveStep *= footTypeSpeedMult;
                   if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
                     // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-                    const isReducedQuicksand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+                    const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
                     const levelPenalties = [0.60, 0.50, 0.40, 0.30];
                     const penaltyMultiplier = isReducedQuicksand 
                       ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
@@ -5307,7 +5370,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   }
                   if (currentBeachEffectRef.current === "heavySand") {
                     // Heavy Sand: Level 1 = 10%, Level 2 = 20%, Level 3 = 30%, Level 4 = 40%, Boss = 65%
-                    const isReducedHeavySand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+                    const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
                     const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
                     const heavySandPenalty = isReducedHeavySand 
                       ? (levelPenalties[beachLevelRef.current - 1] || 0.60)
@@ -5374,7 +5437,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   moveStep *= footTypeSpeedMult * bossQuickRunSpeedMult;
                   if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
                     // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-                    const isReducedQuicksand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+                    const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
                     const levelPenalties = [0.60, 0.50, 0.40, 0.30];
                     const penaltyMultiplier = isReducedQuicksand 
                       ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
@@ -5383,7 +5446,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   }
                   if (currentBeachEffectRef.current === "heavySand") {
                     // Heavy Sand: Level 1 = 10%, Level 2 = 20%, Level 3 = 30%, Level 4 = 40%, Boss = 65%
-                    const isReducedHeavySand = runTypeRef.current === "beachBonanza" && beachLevelRef.current < 5;
+                    const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
                     const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
                     const heavySandPenalty = isReducedHeavySand 
                       ? (levelPenalties[beachLevelRef.current - 1] || 0.60)
@@ -5819,6 +5882,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               beachType={currentBeachEffect}
               nodeType={slayPendingNodeType}
               gold={slayGold}
+              actNumber={slayMap?.actNumber ?? 1}
               onStart={handleSlayStartBattle}
             />
           </div>
