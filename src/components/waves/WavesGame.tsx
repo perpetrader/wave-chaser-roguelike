@@ -5555,11 +5555,13 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             WAVE CHASER
           </h1>
           <div className="w-full max-w-md">
-            <RoguelikeStartScreen 
+            <RoguelikeStartScreen
               onStart={startRoguelikeRun}
               onContinue={continueRoguelikeRun}
               hasSavedRun={hasSavedRun}
               savedRunType={savedRunTypeFromStorage}
+              isMuted={isMuted}
+              onToggleMute={() => setIsMuted(!isMuted)}
             />
           </div>
         </div>

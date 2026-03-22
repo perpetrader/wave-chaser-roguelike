@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, Swords, TrendingUp, Target, ArrowLeft, Skull, Sparkles, Crown, Gauge, Footprints } from "lucide-react";
+import { ChevronDown, Swords, TrendingUp, Target, ArrowLeft, Skull, Sparkles, Crown, Gauge, Footprints, Volume2, VolumeX } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,6 +20,8 @@ interface RoguelikeStartScreenProps {
   onContinue?: () => void;
   hasSavedRun: boolean;
   savedRunType?: RunType;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
 }
 
 const MOVEMENT_MODES: { mode: MovementMode; name: string; description: string }[] = [
@@ -48,7 +50,7 @@ const TOE_TAP_MODES: { mode: ToeTapMode; name: string; description: string }[] =
   { mode: "auto", name: "Auto Toe Tap", description: "Toes auto-tap when a wave can be reached" },
 ];
 
-const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }: RoguelikeStartScreenProps) => {
+const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType, isMuted, onToggleMute }: RoguelikeStartScreenProps) => {
   const [rulesOpen, setRulesOpen] = useState(false);
   const [abilitiesOpen, setAbilitiesOpen] = useState(false);
   
@@ -94,8 +96,18 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType }
       className="fixed inset-0 flex flex-col items-center gap-3 sm:gap-4 py-4 px-3 overflow-y-auto bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url(${roguelikeBg})` }}
     >
-      {/* Title */}
-      <div className="flex flex-col items-center text-center pt-2">
+      {/* Title + Mute */}
+      <div className="flex flex-col items-center text-center pt-2 relative w-full max-w-md">
+        {onToggleMute && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleMute}
+            className="absolute top-2 right-0 text-white/60 hover:text-white hover:bg-white/10"
+          >
+            {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+          </Button>
+        )}
         <h1 className="text-4xl sm:text-5xl font-display text-white drop-shadow-lg tracking-tight" style={{ textShadow: "0 0 40px hsla(200, 80%, 50%, 0.4), 0 2px 8px rgba(0,0,0,0.5)" }}>
           WAVE CHASER
         </h1>
