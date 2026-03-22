@@ -249,7 +249,7 @@ export default function SlayMapView({ map, availableNodeIds, onSelectNode, gold 
                   key={`bg-${conn.from}-${conn.to}`}
                   d={path}
                   fill="none"
-                  stroke="rgba(255,255,255,0.07)"
+                  stroke="rgba(255,255,255,0.20)"
                   strokeWidth="1.5"
                   strokeDasharray="6 6"
                 />
