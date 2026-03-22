@@ -312,13 +312,23 @@ const getSlayBattleSettings = (
 
   // Node type modifiers
   const nodeModifiers = {
-    beach: { speedMult: 1.0, wavesToWin: 5, wavesToLose: 5, timerBase: 6000, effectLevel: 2 },
-    elite: { speedMult: 0.85, wavesToWin: 7, wavesToLose: 4, timerBase: 5500, effectLevel: 4 },
-    boss:  { speedMult: 0.75, wavesToWin: 10, wavesToLose: 3, timerBase: 5000, effectLevel: 5 },
+    beach: { speedMult: 1.0, timerBase: 6000, effectLevel: 2 },
+    elite: { speedMult: 0.85, timerBase: 4000, effectLevel: 4 },
+    boss:  { speedMult: 0.75, timerBase: 4000, effectLevel: 5 },
   };
 
   const mod = nodeModifiers[nodeType];
   const combinedScaling = actScaling * mod.speedMult;
+
+  // Waves to win: beach = 4 + (act*2), elite/boss = 6 + (act*4)
+  const wavesToWin = nodeType === "beach"
+    ? 4 + (actNumber * 2)
+    : 6 + (actNumber * 4);
+
+  // Waves missed to lose: beach = 6-act, elite/boss = 4-act (min 1)
+  const wavesToLose = nodeType === "beach"
+    ? Math.max(1, (6 - actNumber) + wavesMissedBonus)
+    : Math.max(1, (4 - actNumber) + wavesMissedBonus);
 
   return {
     settings: {
@@ -326,8 +336,8 @@ const getSlayBattleSettings = (
       wavePeakDuration: Math.round(ROGUELIKE_BASE_SETTINGS.wavePeakDuration * combinedScaling),
       waveSpeed: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpeed * combinedScaling),
     },
-    wavesToWin: mod.wavesToWin + (actNumber - 1), // +1 wave per act
-    wavesToLose: Math.max(1, mod.wavesToLose + wavesMissedBonus),
+    wavesToWin,
+    wavesToLose,
     waterTimer: Math.round(mod.timerBase * actScaling) + waterTimeBonus,
     beachEffectLevel: mod.effectLevel,
   };
@@ -3938,8 +3948,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     // Nighttime beach: calculate lit rows for flashlight effect
     const isNighttime = currentBeachEffect === "nighttime";
     const feetRow = Math.floor(feetPosition);
-    // Levels 1-4: 7 rows toward shore, Boss: 5 rows toward shore
-    const isReducedNighttimeRows = runType === "beachBonanza" && beachLevel < 5;
+    // Flashlight cone size: more rows visible on easier levels
+    const isReducedNighttimeRows = (runType === "beachBonanza" || runType === "slayTheWaves") && beachLevel < 5;
     const flashlightRowCount = isReducedNighttimeRows ? FLASHLIGHT_ROWS_REDUCED : FLASHLIGHT_ROWS_BOSS;
     const flashlightMinRow = Math.max(0, feetRow - flashlightRowCount);
     const flashlightMaxRow = feetRow + 1; // Include the feet row and one below
@@ -5181,7 +5191,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                     {flashlightActive && (
                       <div 
                         className="absolute bottom-0 left-0 h-1 bg-yellow-400 transition-all"
-                        style={{ width: `${(flashlightDuration / (runType === "beachBonanza" && beachLevel < 5 ? FLASHLIGHT_DURATION_REDUCED : FLASHLIGHT_DURATION_BOSS)) * 100}%` }}
+                        style={{ width: `${(flashlightDuration / ((runType === "beachBonanza" || runType === "slayTheWaves") && beachLevel < 5 ? FLASHLIGHT_DURATION_REDUCED : FLASHLIGHT_DURATION_BOSS)) * 100}%` }}
                       />
                     )}
                     {!flashlightActive && flashlightCooldown > 0 && (
@@ -5294,7 +5304,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 {flashlightActive && (
                   <div 
                     className="absolute bottom-0 left-0 h-1 bg-yellow-400 transition-all"
-                    style={{ width: `${(flashlightDuration / (runType === "beachBonanza" && beachLevel < 5 ? FLASHLIGHT_DURATION_REDUCED : FLASHLIGHT_DURATION_BOSS)) * 100}%` }}
+                    style={{ width: `${(flashlightDuration / ((runType === "beachBonanza" || runType === "slayTheWaves") && beachLevel < 5 ? FLASHLIGHT_DURATION_REDUCED : FLASHLIGHT_DURATION_BOSS)) * 100}%` }}
                   />
                 )}
                 {!flashlightActive && flashlightCooldown > 0 && (
