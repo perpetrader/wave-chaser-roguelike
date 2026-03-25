@@ -475,6 +475,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const [slayHasRested, setSlayHasRested] = useState(false);
   const [slayPendingNodeType, setSlayPendingNodeType] = useState<"beach" | "elite" | "boss">("beach");
   const slayBattleSettingsRef = useRef<DifficultySettings | null>(null); // Slay-specific wave speed/timing for current battle
+  const slayWaterTimerOverrideRef = useRef(0); // Slay-specific water timer (set before startLevel, consumed inside)
   const [slayHasSavedRun, setSlayHasSavedRun] = useState(false);
   const SLAY_SAVED_RUN_KEY = "waveChaser_slayTheWavesSavedRun";
   
@@ -2743,14 +2744,21 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
   const startLevel = (level?: number, forceRoguelike?: boolean, currentWaterTimeBonus?: number, preselectedAbilities?: AbilityType[], currentWavesMissedBonus?: number) => {
     // For roguelike, use level-based water timer with bonus; otherwise standard 5s
+    // Slay the Waves calculates its own timer in handleSlayStartBattle and stores it in slayWaterTimerOverride
     const isRoguelikeMode = forceRoguelike ?? isRoguelike;
     const levelToUse = level ?? roguelikeLevel;
     const bonus = currentWaterTimeBonus ?? waterTimeBonus;
     const missedBonus = currentWavesMissedBonus ?? wavesMissedBonus;
-    const baseTimer = isRoguelikeMode 
-      ? getRoguelikeLevelSettings(levelToUse).waterTimer 
-      : 5000;
-    const timer = baseTimer + bonus; // bonus is now in ms
+    let timer: number;
+    if (runTypeRef.current === "slayTheWaves" && slayWaterTimerOverrideRef.current > 0) {
+      timer = slayWaterTimerOverrideRef.current;
+      slayWaterTimerOverrideRef.current = 0; // Consume the override
+    } else {
+      const baseTimer = isRoguelikeMode
+        ? getRoguelikeLevelSettings(levelToUse).waterTimer
+        : 5000;
+      timer = baseTimer + bonus; // bonus is now in ms
+    }
     
     // Set selected abilities if provided, otherwise use first 4 unlocked
     if (preselectedAbilities) {
@@ -2760,7 +2768,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
     
     // Update waves to win/lose for this level (keeps HUD + win condition in sync)
-    if (isRoguelikeMode) {
+    // Slay the Waves sets its own values in handleSlayStartBattle — don't override
+    if (isRoguelikeMode && runTypeRef.current !== "slayTheWaves") {
       setRoguelikeWavesToWin(getRoguelikeLevelSettings(levelToUse).wavesToWin);
 
       const { wavesToLose } = getRoguelikeLevelSettings(levelToUse, lastWavesMissedUpgradeLevel);
@@ -3385,9 +3394,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     // Store Slay-specific wave speed/timing so getCurrentSettings uses it
     slayBattleSettingsRef.current = battleSettings.settings;
 
-    // Pass the slay-specific water timer as a bonus offset from the base
-    const waterTimerOffset = battleSettings.waterTimer - ROGUELIKE_BASE_WATER_TIMER;
-    startLevel(roguelikeLevel, true, waterTimerOffset, selectedAbilities.length > 0 ? selectedAbilities : undefined, wavesMissedBonus);
+    // Store Slay-specific water timer so startLevel uses it instead of standard formula
+    slayWaterTimerOverrideRef.current = battleSettings.waterTimer;
+
+    startLevel(roguelikeLevel, true, 0, selectedAbilities.length > 0 ? selectedAbilities : undefined, wavesMissedBonus);
   };
   
   // Shop handlers
