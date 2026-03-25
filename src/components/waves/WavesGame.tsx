@@ -2800,13 +2800,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       setBeachEffectWithRef(null);
     }
     
-    // Show tutorial popup at level 2 (game pauses until dismissed) - not for Boss Quick Run / Boss Hell Run
-    if (isRoguelikeMode && levelToUse === 2 && runTypeRef.current !== "bossQuickRun" && runTypeRef.current !== "bossHellRun") {
+    // Show tutorial popup at level 2 (game pauses until dismissed) - only for Standard and Beach Bonanza
+    const isStandardOrBonanza = runTypeRef.current === "standard" || runTypeRef.current === "beachBonanza";
+    if (isRoguelikeMode && levelToUse === 2 && isStandardOrBonanza) {
       setShowTimerTutorial(true);
     }
-    
-    // Show waves tutorial popup at level 6 (first time waves to win changes) - not for Boss Quick Run / Boss Hell Run
-    if (isRoguelikeMode && levelToUse === 6 && runTypeRef.current !== "bossQuickRun" && runTypeRef.current !== "bossHellRun") {
+
+    // Show waves tutorial popup at level 6 (first time waves to win changes) - only for Standard and Beach Bonanza
+    if (isRoguelikeMode && levelToUse === 6 && isStandardOrBonanza) {
       setShowWavesTutorial(true);
     }
     
