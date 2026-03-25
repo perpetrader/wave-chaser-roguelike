@@ -5853,8 +5853,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       
       {/* Slay the Waves Shop Screen */}
       {gameState === "slayShop" && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 overflow-auto py-6 px-4">
-          <div className="bg-slate-800 rounded-xl p-6 max-w-lg mx-4 border-2 border-yellow-500/50 shadow-2xl">
+        <div className="absolute inset-0 z-30 flex items-start justify-center bg-black/80 overflow-y-auto py-4 px-3">
+          <div className="bg-slate-800 rounded-xl p-3 w-full max-w-md border-2 border-yellow-500/50 shadow-2xl my-auto" style={{ maxHeight: "calc(100dvh - 2rem)" }}>
             <ShopScreen
               gold={slayGold}
               unlockedAbilities={unlockedAbilities}
