@@ -312,22 +312,26 @@ const getSlayBattleSettings = (
 
   // Node type modifiers
   const nodeModifiers = {
-    beach: { speedMult: 1.0, timerBase: 6000, effectLevel: 2 },
-    elite: { speedMult: 0.85, timerBase: 4000, effectLevel: 4 },
+    beach: { speedMult: 1.0, timerBase: 6000, effectLevel: 3 },
+    elite: { speedMult: 0.85, timerBase: 5000, effectLevel: 5 },
     boss:  { speedMult: 0.75, timerBase: 4000, effectLevel: 5 },
   };
 
   const mod = nodeModifiers[nodeType];
   const combinedScaling = actScaling * mod.speedMult;
 
-  // Waves to win: beach = 4 + (act*2), elite/boss = 6 + (act*4)
+  // Waves to win: beach = 4 + (act*2), elite = 5 + (act*3), boss = 6 + (act*4)
   const wavesToWin = nodeType === "beach"
     ? 4 + (actNumber * 2)
+    : nodeType === "elite"
+    ? 5 + (actNumber * 3)
     : 6 + (actNumber * 4);
 
-  // Waves missed to lose: beach = 6-act, elite/boss = 4-act (min 1)
+  // Waves missed to lose: beach = 6-act, elite = 5-act, boss = 4-act (min 1)
   const wavesToLose = nodeType === "beach"
     ? Math.max(1, (6 - actNumber) + wavesMissedBonus)
+    : nodeType === "elite"
+    ? Math.max(1, (5 - actNumber) + wavesMissedBonus)
     : Math.max(1, (4 - actNumber) + wavesMissedBonus);
 
   return {
