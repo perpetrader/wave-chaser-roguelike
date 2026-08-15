@@ -71,6 +71,12 @@
     min-height: 100dvh; /* Dynamic viewport height for mobile */
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    /* Game UI has no copyable content: block text selection everywhere.
+       Without this, rapid double-taps on buttons/cards (Begin Adventure,
+       ability drafts) word-select the label and paint the OS selection
+       highlight as a stray colored bar over the control. */
+    -webkit-user-select: none;
+    user-select: none;
   }
   
   h1, h2, h3, h4, h5, h6 {
