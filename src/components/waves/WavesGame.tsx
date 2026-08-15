@@ -14,6 +14,10 @@ import RoguelikeStartScreen, { RunType as StartScreenRunType, FootType, ToeTapMo
 import AbilitySelectionScreen from "./AbilitySelectionScreen";
 import BeachSelectionScreen, { BeachType, BEACH_INFO } from "./BeachSelectionScreen";
 import BeachFrame from "./BeachFrame";
+import GameGrid from "./game/GameGrid";
+import Feet from "./game/Feet";
+import OceanLines from "./game/OceanLines";
+import SandTexture from "./game/SandTexture";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 // Boss Quick Run import
@@ -3774,384 +3778,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const doubleDipMaxDuration = isRoguelike ? getAbilityDuration("doubleDip") : 0;
   const jumpAroundMaxDuration = isRoguelike ? getAbilityDuration("jumpAround") : 0;
 
-  // Render the pixel grid
-  const renderGrid = () => {
-    const cells = [];
-    
-    // For spike waves effect: get current time for flashing animation
-    const isSpikeWavesActive = currentBeachEffect === "spikeWaves";
-    const spikeFlashPhase = isSpikeWavesActive ? Math.floor(Date.now() / 150) % 2 : 0; // Toggle every 150ms
-    
-    // Nighttime beach: calculate lit rows for flashlight effect
-    const isNighttime = currentBeachEffect === "nighttime";
-    const feetRow = Math.floor(feetPosition);
-    // Flashlight cone size: more rows visible on easier levels
-    const isReducedNighttimeRows = (runType === "beachBonanza" || runType === "slayTheWaves") && beachLevel < 5;
-    const flashlightRowCount = isReducedNighttimeRows ? FLASHLIGHT_ROWS_REDUCED : FLASHLIGHT_ROWS_BOSS;
-    const flashlightMinRow = Math.max(0, feetRow - flashlightRowCount);
-    const flashlightMaxRow = feetRow + 1; // Include the feet row and one below
-    
-    // Helper to check if a cell is within flashlight cone
-    const isInFlashlightCone = (x: number, y: number): boolean => {
-      if (!flashlightActive || !isNighttime) return false;
-      if (y < flashlightMinRow || y > flashlightMaxRow) return false;
-      
-      // Flashlight cone: starts at feet width (2 cells) and expands outward
-      // At feet row: width = 2 cells centered
-      // Each row away from feet: expand by 0.5 cells on each side
-      const distanceFromFeet = feetRow - y;
-      const coneHalfWidth = 1 + (distanceFromFeet * 0.5); // Starts at 1 (2 cells total), expands
-      const centerX = OCEAN_WIDTH / 2 - 0.5; // Center between the two feet columns (9.5)
-      const distFromCenter = Math.abs(x - centerX);
-      
-      return distFromCenter <= coneHalfWidth;
-    };
-    
-    // Helper to check if a cell is at the edge of flashlight cone (for glow effect)
-    const isAtConeEdge = (x: number, y: number): boolean => {
-      if (!flashlightActive || !isNighttime) return false;
-      if (!isInFlashlightCone(x, y)) return false;
-      
-      // Check if any adjacent cell (that exists) is in darkness
-      const neighbors = [
-        { nx: x - 1, ny: y },     // left
-        { nx: x + 1, ny: y },     // right
-        { nx: x, ny: y - 1 },     // up
-        { nx: x, ny: y + 1 },     // down
-      ];
-      
-      for (const { nx, ny } of neighbors) {
-        if (nx >= 0 && nx < OCEAN_WIDTH && ny >= 0 && ny < TOTAL_HEIGHT) {
-          if (!isInFlashlightCone(nx, ny)) {
-            return true; // Adjacent to darkness = edge cell
-          }
-        }
-      }
-      
-      // Also check if at the top/bottom boundary of cone
-      if (y === flashlightMinRow || y === flashlightMaxRow) return true;
-      
-      return false;
-    };
-
-    for (let y = 0; y < TOTAL_HEIGHT; y++) {
-      for (let x = 0; x < OCEAN_WIDTH; x++) {
-        let cellType: "ocean" | "crest" | "beach" = "beach";
-
-        if (y < OCEAN_HEIGHT) {
-          // Ocean rows are always ocean (blue)
-          cellType = "ocean";
-        } else {
-          // Beach area - default to sand
-          cellType = "beach";
-        }
-
-        // Check if this exact row is a wave crest (only 1 crest row per wave)
-        const crestWave = waves.find((wave) => y === wave.row);
-        const isCrest = !!crestWave;
-        if (isCrest) {
-          cellType = "crest";
-        } else if (y >= OCEAN_HEIGHT) {
-          // Beach row - check if wave covers it (rows between shoreline and crest are water)
-          const isWaterCovered = waves.some((wave) => y < wave.row && y >= OCEAN_HEIGHT);
-          cellType = isWaterCovered ? "ocean" : "beach";
-        }
-
-        // Check if this cell is a spike wave indicator (row just below a wave crest, full width)
-        const spikeWave = isSpikeWavesActive ? waves.find((wave) => y === wave.row + 1) : null;
-        const isSpikeCell = !!spikeWave; // Full width, we'll render half-height in the cell
-
-        // Check if Crystal Ball is active and this is the peak row of the next incoming wave
-        // Check for both beach and underwater beach (wave-covered) positions
-        const nextIncomingWave = waves.find((wave) => wave.phase === "incoming");
-        const isBeachRow = y >= OCEAN_HEIGHT;
-        const isCrystalBallIndicator = crystalBall.active && 
-          isBeachRow && 
-          nextIncomingWave && 
-          y === nextIncomingWave.maxReach;
-
-        // Determine color - use touched crest color if the wave was touched
-        // Apply pink tint when slowdown is active
-        let color: string;
-        
-        // Check if this cell should be visible (not in nighttime darkness)
-        const cellInLight = isInFlashlightCone(x, y);
-        const isInDarkness = isNighttime && !cellInLight;
-        
-        // Nighttime: make everything dark except lit cells and crystal ball indicator
-        if (isInDarkness && !isCrystalBallIndicator) {
-          color = "hsl(220, 15%, 8%)"; // Very dark blue-gray for nighttime
-        } else if (cellType === "beach") {
-          // Crystal ball shows dark line on bottom half of the row
-          if (isCrystalBallIndicator) {
-            color = "hsl(42, 30%, 45%)"; // Darker sand color
-          } else {
-            color = COLORS.sand;
-          }
-        } else if (cellType === "crest" && crestWave?.touched) {
-          color = COLORS.crestTouched; // Keep touched crest color unchanged during slowdown
-        } else if (cellType === "crest" && crestWave?.magnetAffected) {
-          color = "hsl(0, 70%, 60%)"; // Red-tinted crest for magnet-affected waves
-        } else if (cellType === "crest") {
-          color = COLORS.crest; // Keep crest white during slowdown
-        } else if (cellType === "ocean") {
-          color = slowdown.active ? "hsl(280, 50%, 40%)" : COLORS.ocean; // Purple-pink ocean
-        } else {
-          color = COLORS[cellType];
-        }
-
-        const isTouchedCrest = cellType === "crest" && crestWave?.touched;
-        const isMagnetCrest = cellType === "crest" && crestWave?.magnetAffected && !crestWave?.touched;
-        const isConeEdge = isAtConeEdge(x, y);
-
-        // Determine box shadow - flashlight edge glow takes priority for lit cells
-        // Only show glow effects for cells that are in the lit area during nighttime
-        let cellBoxShadow: string | undefined;
-        const showEffectsInLight = !isNighttime || cellInLight;
-        if (isTouchedCrest && showEffectsInLight) {
-          cellBoxShadow = `0 0 8px 2px ${COLORS.crestTouched}`;
-        } else if (isMagnetCrest && showEffectsInLight) {
-          cellBoxShadow = `0 0 10px 3px hsl(0, 70%, 50%)`;
-        } else if (isCrystalBallIndicator) {
-          // Crystal Conch always visible, even in nighttime darkness
-          cellBoxShadow = `0 0 12px 4px hsl(180, 80%, 50%)`;
-        }
-
-        cells.push(
-          <div
-            key={`${x}-${y}`}
-            className={cn(
-              isCrystalBallIndicator && "animate-pulse",
-              isMagnetCrest && showEffectsInLight && "animate-pulse"
-            )}
-            style={{
-              width: PIXEL_SIZE,
-              height: PIXEL_SIZE,
-              backgroundColor: color,
-              boxShadow: cellBoxShadow,
-              outline: `1px solid ${color}`,
-              position: "relative",
-              zIndex: isConeEdge ? 15 : isCrystalBallIndicator ? 20 : ((isTouchedCrest || isMagnetCrest) && showEffectsInLight) ? 10 : undefined,
-            }}
-          >
-            {/* Wave foam line: bright highlight at top of crest cells */}
-            {isCrest && showEffectsInLight && (
-              <div className="absolute left-0 right-0 top-0" style={{
-                height: 2,
-                backgroundColor: crestWave?.touched ? "hsla(160, 90%, 80%, 0.7)" : "hsla(180, 100%, 95%, 0.8)",
-              }} />
-            )}
-            {/* Spike wave indicator - half-height silver bar at top of cell */}
-            {isSpikeCell && (
-              <div
-                className="absolute left-0 right-0 top-0 transition-colors duration-200"
-                style={{
-                  height: PIXEL_SIZE / 2,
-                  backgroundColor: spikeFlashPhase === 0
-                    ? "hsl(0, 0%, 70%)"
-                    : "hsl(0, 0%, 80%)",
-                  boxShadow: `0 0 4px 1px hsl(0, 0%, ${spikeFlashPhase === 0 ? 55 : 65}%)`,
-                  zIndex: 15,
-                }}
-              />
-            )}
-          </div>
-        );
-      }
-    }
-
-    return cells;
-  };
-
-  // Render feet as pixel art (2 wide, 2 tall)
-  const renderFeet = () => {
-    // Calculate toe extension with Super Tap multiplier
-    // Apply Gummy Beach effect to visual calculation to match game logic
-    const isGummyBeachActive = currentBeachEffect === "gummyBeach";
-    const isGummyBoss = isGummyBeachActive && (runType !== "beachBonanza" || beachLevel >= 5);
-    
-    let visualToeExtension = isTapping ? 0.5 : 0;
-    if (isGummyBeachActive) {
-      if (isGummyBoss) {
-        visualToeExtension = 0; // Boss level: no toe tap
-      } else {
-        // Reduced toe extension for non-boss gummy beach
-        visualToeExtension *= gummyToeExtensionMultiplier(beachLevel);
-      }
-    }
-    const toeExtension = superTap.active ? visualToeExtension * SUPER_TAP_MULTIPLIER : visualToeExtension;
-    const feetY = (feetPosition - toeExtension) * PIXEL_SIZE;
-    const feetX = (OCEAN_WIDTH / 2 - 1) * PIXEL_SIZE;
-    
-    // Calculate foot height - stretches when Super Tap is active and tapping (blocked by Gummy Boss)
-    const baseFootHeight = PIXEL_SIZE * 2;
-    const canStretch = !isGummyBoss && isTapping;
-    const stretchAmount = superTap.active && canStretch ? (SUPER_TAP_MULTIPLIER - 1) * 0.5 * PIXEL_SIZE : 0;
-    const footHeight = baseFootHeight + stretchAmount;
-
-    // Ghost toe extension height
-    const ghostToeHeight = ghostToe.active ? GHOST_TOE_EXTENSION * PIXEL_SIZE : 0;
-
-    // Ability-based foot color
-    // Check if teleport immunity is active (shield persists after ability timer ends)
-    // Use a small threshold (10ms) to avoid visual flickering from floating point precision
-    const hasTeleportImmunity = waveSurferShield > 10;
-    
-    const getFeetColor = () => {
-      if (fishNetStuck) return "hsl(30, 60%, 40%)"; // Dark brown/orange when stuck in fish net
-      if (currentBeachEffect === "quicksand" && quicksandPenaltyActiveRef.current) return "hsl(30, 60%, 40%)"; // Dark brown/orange when quicksand penalty active (matches fish net)
-      if (feetMagnetized) return "hsl(0, 70%, 60%)"; // Red glow when magnetized to wave
-      if (jumpAround.active) return "hsl(84, 80%, 55%)"; // Lime green for Jump Around
-      if (superTap.active) return "hsl(50, 100%, 60%)";
-      if (isTouching) return COLORS.feetTouching;
-      return COLORS.feet;
-    };
-    
-    // Teleport uses a special striped gradient - handled separately in style
-    const getTeleportGradient = () => 
-      "repeating-linear-gradient(45deg, hsl(174, 70%, 50%), hsl(174, 70%, 50%) 4px, hsl(280, 60%, 35%) 4px, hsl(280, 60%, 35%) 8px)";
-
-    // Get filter effect based on active abilities
-    const getFilterEffect = () => {
-      if (fishNetStuck || (currentBeachEffect === "quicksand" && quicksandPenaltyActiveRef.current)) return "drop-shadow(0 0 8px hsl(30, 60%, 30%))"; // Dark glow when stuck
-      if (feetMagnetized) return "drop-shadow(0 0 16px hsl(0, 70%, 50%)) drop-shadow(0 0 24px hsl(0, 70%, 40%))"; // Strong red glow when magnetized
-      if (jumpAround.active) return "drop-shadow(0 0 12px hsl(84, 80%, 55%))";
-      if (waveSurfer.active || hasTeleportImmunity) return "drop-shadow(0 0 12px hsl(280, 60%, 50%)) drop-shadow(0 0 20px hsl(174, 70%, 50%))"; // Purple/teal glow for teleport
-      if (superTap.active) return "drop-shadow(0 0 12px hsl(50, 100%, 60%))";
-      if (isTouching) return `drop-shadow(0 0 8px ${COLORS.feetTouching})`;
-      if (ghostToe.active) return "drop-shadow(0 0 6px hsl(270, 70%, 60%))";
-      return "none";
-    };
-
-    return (
-      <div
-        className={cn(
-          "absolute flex gap-1",
-          // Momentum updates position every frame; CSS transitions cause visible lag/jumps.
-          movementMode === "momentum" ? "transition-none" : "transition-all duration-75",
-          isTapping && "scale-110",
-          superTap.active && "animate-pulse",
-          jumpAround.active && "animate-[pulse_0.3s_ease-in-out_infinite]"
-        )}
-        style={{
-          left: feetX,
-          top: feetY - ghostToeHeight,
-          filter: getFilterEffect(),
-          zIndex: 20, // Ensure feet render above grid cells (flashlight edges are z-15)
-        }}
-      >
-        {/* Left foot with ghost feet extension */}
-        <div className="flex flex-col">
-          {/* Ghost feet extension - full ghost foot */}
-          {ghostToe.active && (
-            <div
-              className="transition-all duration-100"
-              style={{
-                width: PIXEL_SIZE,
-                height: ghostToeHeight,
-                backgroundColor: "hsla(270, 70%, 60%, 0.3)",
-                border: "2px solid hsl(270, 70%, 60%)",
-                borderBottom: "none",
-                borderRadius: "4px 4px 0 0",
-                opacity: 0.9,
-                boxShadow: "0 0 8px hsla(270, 70%, 60%, 0.5)",
-              }}
-            />
-          )}
-          {/* Actual foot */}
-          <div
-            className="transition-all duration-100 relative"
-            style={{
-              width: PIXEL_SIZE,
-              height: footHeight,
-              backgroundColor: (!jumpAround.active && (waveSurfer.active || hasTeleportImmunity)) ? undefined : getFeetColor(),
-              background: (!jumpAround.active && (waveSurfer.active || hasTeleportImmunity)) ? getTeleportGradient() : undefined,
-              border: `2px solid ${jumpAround.active ? "hsl(84, 60%, 35%)" : (waveSurfer.active || hasTeleportImmunity) ? "hsl(280, 50%, 40%)" : superTap.active ? "hsl(45, 100%, 40%)" : COLORS.feetOutline}`,
-              boxShadow: (!jumpAround.active && (waveSurfer.active || hasTeleportImmunity)) ? "0 0 12px hsl(280, 60%, 50%), 0 0 24px hsl(174, 70%, 40%)" : undefined,
-              borderRadius: ghostToe.active ? "0 0 4px 4px" : "4px",
-            }}
-          >
-            {/* Toe detail line */}
-            <div style={{
-              position: "absolute",
-              top: 2,
-              left: "50%",
-              width: 1,
-              height: footHeight * 0.3,
-              backgroundColor: "hsla(0, 0%, 0%, 0.15)",
-            }} />
-            {/* Toe Warrior immunity line - dotted line at 35% from top */}
-            {footType === "toeWarrior" && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: footHeight * 0.35,
-                  left: 0,
-                  right: 0,
-                  borderTop: "2px dashed hsla(180, 70%, 60%, 0.8)",
-                }}
-              />
-            )}
-          </div>
-        </div>
-        {/* Right foot with ghost feet extension */}
-        <div className="flex flex-col">
-          {/* Ghost feet extension - full ghost foot */}
-          {ghostToe.active && (
-            <div
-              className="transition-all duration-100"
-              style={{
-                width: PIXEL_SIZE,
-                height: ghostToeHeight,
-                backgroundColor: "hsla(270, 70%, 60%, 0.3)",
-                border: "2px solid hsl(270, 70%, 60%)",
-                borderBottom: "none",
-                borderRadius: "4px 4px 0 0",
-                opacity: 0.9,
-                boxShadow: "0 0 8px hsla(270, 70%, 60%, 0.5)",
-              }}
-            />
-          )}
-          {/* Actual foot */}
-          <div
-            className="transition-all duration-100 relative"
-            style={{
-              width: PIXEL_SIZE,
-              height: footHeight,
-              backgroundColor: (!jumpAround.active && (waveSurfer.active || hasTeleportImmunity)) ? undefined : getFeetColor(),
-              background: (!jumpAround.active && (waveSurfer.active || hasTeleportImmunity)) ? getTeleportGradient() : undefined,
-              border: `2px solid ${jumpAround.active ? "hsl(84, 60%, 35%)" : (waveSurfer.active || hasTeleportImmunity) ? "hsl(280, 50%, 40%)" : superTap.active ? "hsl(45, 100%, 40%)" : COLORS.feetOutline}`,
-              boxShadow: (!jumpAround.active && (waveSurfer.active || hasTeleportImmunity)) ? "0 0 12px hsl(280, 60%, 50%), 0 0 24px hsl(174, 70%, 40%)" : undefined,
-              borderRadius: ghostToe.active ? "0 0 4px 4px" : "4px",
-            }}
-          >
-            {/* Toe detail line */}
-            <div style={{
-              position: "absolute",
-              top: 2,
-              left: "50%",
-              width: 1,
-              height: footHeight * 0.3,
-              backgroundColor: "hsla(0, 0%, 0%, 0.15)",
-            }} />
-            {/* Toe Warrior immunity line - dotted line at 35% from top */}
-            {footType === "toeWarrior" && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: footHeight * 0.35,
-                  left: 0,
-                  right: 0,
-                  borderTop: "2px dashed hsla(180, 70%, 60%, 0.8)",
-                }}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // Render wave surfer teleport trail particles
   const renderWaveSurferTrail = () => {
     const now = Date.now();
@@ -4274,16 +3900,16 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             }}
           >
           {/* Grid cells */}
-          <div
-            className="grid"
-            style={{
-              gridTemplateColumns: `repeat(${OCEAN_WIDTH}, ${PIXEL_SIZE}px)`,
-              gridTemplateRows: `repeat(${TOTAL_HEIGHT}, ${PIXEL_SIZE}px)`,
-              backgroundColor: COLORS.sand,
-            }}
-          >
-            {renderGrid()}
-          </div>
+          <GameGrid
+            waves={waves}
+            currentBeachEffect={currentBeachEffect}
+            beachLevel={beachLevel}
+            runType={runType}
+            flashlightActive={flashlightActive}
+            crystalBallActive={crystalBall.active}
+            slowdownActive={slowdown.active}
+            feetRow={Math.floor(feetPosition)}
+          />
 
           {/* Visual polish overlays (pointer-events-none so they don't block input) */}
           {/* Ocean depth gradient */}
@@ -4297,21 +3923,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             }}
           />
           {/* Ocean wave lines */}
-          <svg className="absolute left-0 top-0 pointer-events-none" width={OCEAN_WIDTH * PIXEL_SIZE} height={OCEAN_HEIGHT * PIXEL_SIZE} style={{ opacity: 0.12 }}>
-            {Array.from({ length: 8 }, (_, i) => {
-              const y = (i * 4 + 2) * PIXEL_SIZE;
-              const w = OCEAN_WIDTH * PIXEL_SIZE;
-              return (
-                <path
-                  key={i}
-                  d={`M 0 ${y} Q ${w * 0.25} ${y - 3} ${w * 0.5} ${y} Q ${w * 0.75} ${y + 3} ${w} ${y}`}
-                  stroke={slowdown.active ? "hsl(280, 40%, 70%)" : "hsl(190, 60%, 70%)"}
-                  strokeWidth="1.5"
-                  fill="none"
-                />
-              );
-            })}
-          </svg>
+          <OceanLines slowdownActive={slowdown.active} />
           {/* Shoreline foam line */}
           <div
             className="absolute left-0 right-0 pointer-events-none"
@@ -4331,11 +3943,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             }}
           />
           {/* Sand grain texture lines */}
-          <svg className="absolute left-0 pointer-events-none" style={{ top: OCEAN_HEIGHT * PIXEL_SIZE }} width={OCEAN_WIDTH * PIXEL_SIZE} height={BEACH_HEIGHT * PIXEL_SIZE} opacity={0.08}>
-            {Array.from({ length: 6 }, (_, i) => (
-              <line key={i} x1="0" y1={(i * 2 + 1) * PIXEL_SIZE + 8} x2={OCEAN_WIDTH * PIXEL_SIZE} y2={(i * 2 + 1) * PIXEL_SIZE + 8} stroke="hsl(42, 30%, 45%)" strokeWidth="1" />
-            ))}
-          </svg>
+          <SandTexture />
           
           {/* Beach People (Busy Beach effect) */}
           {currentBeachEffect === "busyBeach" && beachPeople.map(person => (
@@ -5046,7 +4654,26 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           )}
 
           {/* Player feet */}
-          {gameState === "playing" && renderFeet()}
+          {gameState === "playing" && (
+            <Feet
+              currentBeachEffect={currentBeachEffect}
+              runType={runType}
+              beachLevel={beachLevel}
+              feetPosition={feetPosition}
+              isTapping={isTapping}
+              isTouching={isTouching}
+              feetMagnetized={feetMagnetized}
+              fishNetStuck={fishNetStuck}
+              quicksandPenaltyActive={quicksandPenaltyActiveRef.current}
+              waveSurferShield={waveSurferShield}
+              superTapActive={superTap.active}
+              ghostToeActive={ghostToe.active}
+              jumpAroundActive={jumpAround.active}
+              waveSurferActive={waveSurfer.active}
+              movementMode={movementMode}
+              footType={footType}
+            />
+          )}
 
           {/* Wave Surfer teleport trail */}
           {gameState === "playing" && renderWaveSurferTrail()}
