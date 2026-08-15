@@ -103,6 +103,8 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType, 
             variant="ghost"
             size="icon"
             onClick={onToggleMute}
+            aria-label={isMuted ? "Unmute sound" : "Mute sound"}
+            aria-pressed={isMuted}
             className="absolute top-2 right-0 text-white/60 hover:text-white hover:bg-white/10"
           >
             {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}

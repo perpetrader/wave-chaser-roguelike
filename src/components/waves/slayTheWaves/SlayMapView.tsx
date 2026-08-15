@@ -166,8 +166,9 @@ export default function SlayMapView({ map, availableNodeIds, onSelectNode, gold 
   function getLineState(conn: typeof connections[0]): "available" | "visited" | "background" {
     if (currentNode && conn.fromNode.id === currentNode.id && availableSet.has(conn.toNode.id)) return "available";
     if (!currentNode && conn.fromNode.row === 0 && availableSet.has(conn.fromNode.id)) return "available";
+    // Only edges between two visited nodes were actually traveled (one node
+    // per row is visited, so this marks exactly the taken path)
     if (conn.fromNode.visited && conn.toNode.visited) return "visited";
-    if (conn.fromNode.visited || conn.toNode.visited) return "visited";
     return "background";
   }
 
@@ -322,8 +323,9 @@ export default function SlayMapView({ map, availableNodeIds, onSelectNode, gold 
                 key={node.id}
                 onClick={() => isAvailable && onSelectNode(node.id)}
                 disabled={!isAvailable}
+                aria-label={`${node.type}, floor ${node.row + 1}${isCurrent ? ", current position" : isAvailable ? ", available" : ""}`}
                 className={`absolute flex flex-col items-center justify-center rounded-full transition-all duration-200
-                  ${isAvailable ? "cursor-pointer hover:scale-115" : "cursor-default"}
+                  ${isAvailable ? "cursor-pointer hover:scale-[1.15]" : "cursor-default"}
                   ${isAvailable && !isCurrent ? "animate-pulse" : ""}
                 `}
                 style={{

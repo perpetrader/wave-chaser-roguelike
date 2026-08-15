@@ -71,6 +71,22 @@ export default defineConfig(({ mode }) => ({
               },
             },
           },
+          {
+            // The stylesheet above only references these; without caching the
+            // actual .woff2 files the installed PWA loses its fonts offline
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
         ],
       },
     }),

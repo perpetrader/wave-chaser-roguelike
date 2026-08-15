@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Link } from "react-router-dom";
 import { ArrowLeft, ArrowUp, ArrowDown, Hand, Volume2, VolumeX, Shirt, Zap, Ghost, Shell, Snail, Magnet, Waves, Wind, Rabbit, Flashlight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,10 +28,10 @@ import CardRewardScreen from "./slayTheWaves/CardRewardScreen";
 import BeachPreviewScreen from "./slayTheWaves/BeachPreviewScreen";
 import { generateMap, getAvailableNodes, moveToNode } from "./slayTheWaves/mapGenerator";
 import { getRandomEvent } from "./slayTheWaves/events";
-import { 
+import {
   SlayMap, MapNode, GameEvent, EventOption,
-  STARTING_GOLD, STARTING_MAX_WATER_TIME, GOLD_PER_BEACH, GOLD_PER_ELITE, GOLD_PER_BOSS, 
-  SKIP_CARD_GOLD, REST_WATER_TIME_HEAL, SHOP_PRICES 
+  STARTING_GOLD, STARTING_MAX_WATER_TIME, GOLD_PER_BEACH, GOLD_PER_ELITE, GOLD_PER_BOSS,
+  SKIP_CARD_GOLD, REST_WATER_TIME_HEAL, SHOP_PRICES, TOTAL_ACTS
 } from "./slayTheWaves/types";
 
 type GameState = "menu" | "roguelikeMenu" | "confirmLoadout" | "selectAbilities" | "playing" | "gameOver" | "levelComplete" | "roguelikeGameOver" | "selectBeach" | "slayMenu" | "slayMap" | "slayShop" | "slayRest" | "slayEvent" | "slayCardReward" | "slayBeachPreview" | "slayActComplete" | "slayVictory" | "bossQuickRunDraft" | "bossQuickRunLevelComplete" | "bossQuickRunVictory";
@@ -1098,7 +1097,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         lastTimeRef.current = timestamp;
       }
 
-      const deltaTime = timestamp - lastTimeRef.current;
+      // Clamp so a backgrounded tab (rAF pause) can't deliver one huge frame
+      // that instantly drains the water timer and ability durations on return
+      const deltaTime = Math.min(timestamp - lastTimeRef.current, 100);
       lastTimeRef.current = timestamp;
 
       // Update momentum-based movement (if in momentum mode)
@@ -2079,7 +2080,12 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       });
 
       if (shouldMoveWaves) {
-        waveUpdateTimerRef.current = 0;
+        // Keep the remainder instead of resetting to 0 — resetting discarded up
+        // to one frame per step, making waves run ~8% slow at 60fps (worse at 30)
+        waveUpdateTimerRef.current = Math.min(
+          waveUpdateTimerRef.current - effectiveWaveSpeed,
+          effectiveWaveSpeed
+        );
       }
 
       // Update ability timers - use roguelike durations if applicable
@@ -2801,7 +2807,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
     
     // Show tutorial popup at level 2 (game pauses until dismissed) - only for Standard and Beach Bonanza
-    const isStandardOrBonanza = runTypeRef.current === "standard" || runTypeRef.current === "beachBonanza";
+    const isStandardOrBonanza = runTypeRef.current === "roguelike" || runTypeRef.current === "beachBonanza";
     if (isRoguelikeMode && levelToUse === 2 && isStandardOrBonanza) {
       setShowTimerTutorial(true);
     }
@@ -3145,9 +3151,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       const options = generateBeachOptions();
       setBeachOptions(options);
       setGameState("selectBeach");
-    } else if (runTypeValue === "slayTheWaves") {
-      // Slay the Waves has its own start screen and flow
-      setGameState("slayMenu");
     } else {
       // Start level with explicit roguelike flag and fully-reset bonuses/selection (avoid stale closure state)
       startLevel(1, true, 0, [], 0);
@@ -3317,7 +3320,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     // Check if boss - advance act or victory
     if (slayPendingNodeType === "boss" && slayMap) {
-      if (slayMap.actNumber >= SLAY_TOTAL_ACTS) {
+      if (slayMap.actNumber >= TOTAL_ACTS) {
         // Defeated Act 3 boss — Victory!
         // Show card reward first, then victory after card select
         if (rewardAbilities.length > 0) {
@@ -3356,7 +3359,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     // Was the last node a boss?
     const lastWasBoss = slayPendingNodeType === "boss";
     if (lastWasBoss) {
-      if (slayMap.actNumber >= SLAY_TOTAL_ACTS) {
+      if (slayMap.actNumber >= TOTAL_ACTS) {
         setGameState("slayVictory");
       } else {
         const nextAct = slayMap.actNumber + 1;
@@ -4395,6 +4398,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 saveRoguelikeRun();
               }
             }}
+            aria-label="Pause and save run"
             className="flex items-center gap-2 text-white/80 hover:text-white transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -4423,6 +4427,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           variant="ghost"
           size="icon"
           onClick={() => setIsMuted(!isMuted)}
+          aria-label={isMuted ? "Unmute sound" : "Mute sound"}
+          aria-pressed={isMuted}
           className="text-white/80 hover:text-white hover:bg-white/10"
         >
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
@@ -5248,7 +5254,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       {/* Mobile Controls - positioned right below beach */}
       {gameState === "playing" && (
         <div className="absolute z-20 left-0 right-0 flex justify-between items-start px-6 sm:hidden"
-          style={{ top: TOTAL_HEIGHT * PIXEL_SIZE }}
+          // Cap so the buttons stay fully on-screen (incl. home-indicator inset)
+          // on phones shorter than the 688px board + ~120px controls
+          style={{ top: `min(${TOTAL_HEIGHT * PIXEL_SIZE}px, calc(100dvh - 120px - env(safe-area-inset-bottom)))` }}
         >
           {/* Left side: Toe Tap and Flashlight (if nighttime) */}
           <div className="flex flex-col gap-1">
@@ -5272,6 +5280,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                       : "bg-slate-800 border-cyan-500/50 text-cyan-400",
                     isTapping && !isGummyBoss && "bg-cyan-500/30"
                   )}
+                  aria-label="Toe tap"
                   onTouchStart={() => {
                     if (!isGummyBoss) {
                       setIsTapping(true);
@@ -5363,6 +5372,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             <Button
               variant="outline"
               size="lg"
+              aria-label="Move up"
               className="bg-slate-800 border-cyan-500/50 text-cyan-400 h-14 w-14 select-none"
               style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
               onContextMenu={(e) => e.preventDefault()}
@@ -5438,6 +5448,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             <Button
               variant="outline"
               size="lg"
+              aria-label="Move down"
               className="bg-slate-800 border-cyan-500/50 text-cyan-400 h-14 w-14 select-none"
               style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
               onContextMenu={(e) => e.preventDefault()}
