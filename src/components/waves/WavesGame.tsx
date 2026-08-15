@@ -18,6 +18,14 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 // Boss Quick Run import
 import BossQuickRunDraftScreen from "./BossQuickRunDraftScreen";
+import RoguelikeGameOverScreen from "./screens/RoguelikeGameOverScreen";
+import LevelCompleteScreen from "./screens/LevelCompleteScreen";
+import BossRunLevelCompleteScreen from "./screens/BossRunLevelCompleteScreen";
+import BossRunVictoryScreen from "./screens/BossRunVictoryScreen";
+import SlayVictoryScreen from "./screens/SlayVictoryScreen";
+import SlayActCompleteScreen from "./screens/SlayActCompleteScreen";
+import ConfirmLoadoutScreen from "./screens/ConfirmLoadoutScreen";
+import ClassicGameOverScreen from "./screens/ClassicGameOverScreen";
 // Slay the Waves imports
 import SlayTheWavesStartScreen from "./slayTheWaves/SlayTheWavesStartScreen";
 import SlayMapView from "./slayTheWaves/SlayMapView";
@@ -3606,6 +3614,130 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
   };
 
+  const handleBossRunContinue = () => {
+    // Set next beach effect
+    if (bossQuickRunNextBeach) {
+      setBeachEffectWithRef(bossQuickRunNextBeach);
+    }
+
+    // Increment level
+    const nextLevel = roguelikeLevel + 1;
+    setRoguelikeLevel(nextLevel);
+    roguelikeLevelRef.current = nextLevel;
+
+    // Reset all ability cooldowns for the new level
+    const defaultAbilityState: AbilityState = { active: false, cooldownRemaining: 0, durationRemaining: 0 };
+    setInvincible({ ...defaultAbilityState, waterExposure: 0, waterLimit: getWetsuitWaterLimit() });
+    setSuperTap({ ...defaultAbilityState, usesRemaining: SUPER_TAP_USES });
+    setGhostToe(defaultAbilityState);
+    setCrystalBall(defaultAbilityState);
+    setSlowdown(defaultAbilityState);
+    setWaveMagnet(defaultAbilityState);
+    setWaveSurfer(defaultAbilityState);
+    setTowelOff(defaultAbilityState);
+    setDoubleDip(defaultAbilityState);
+    setJumpAround(defaultAbilityState);
+
+    // Show boss popup and start next level
+    setShowBossBeachPopup(true);
+    setGameState("playing");
+    setFeetPosition(35);
+    setWaves([]);
+    setWaterTimer(bossQuickRunCarryoverTimer);
+    levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimer;
+    setWavesTouched(0);
+    setWavesMissed(0);
+    // Fixed denominator - game over handled by checking total misses against MAX
+    const maxMissesForRun = runType === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES;
+    setRoguelikeWavesToLose(maxMissesForRun - bossQuickRunTotalMisses);
+    lastTimeRef.current = 0;
+    waveSpawnTimerRef.current = 0;
+    waveIdRef.current = 0;
+  };
+
+  const handleBossRunPlayAgain = () => {
+    // Reset all Boss Quick Run state
+    setBossQuickRunUsedBeaches([]);
+    setBossQuickRunCarryoverTimer(BOSS_QUICK_RUN_STARTING_WATER_TIME);
+    bossQuickRunCarryoverTimerRef.current = BOSS_QUICK_RUN_STARTING_WATER_TIME;
+    setBossQuickRunTotalMisses(0);
+    bossQuickRunTotalMissesRef.current = 0;
+    setBossQuickRunLevelScore(0);
+    setBossQuickRunNextBeach(null);
+    setBossQuickRunIsNewHighScore(false);
+    setRoguelikeLevel(1);
+    roguelikeLevelRef.current = 1;
+    setTotalScore(0);
+    setUnlockedAbilities([]);
+    setSelectedAbilities([]);
+
+    // Go back to roguelike menu
+    setGameState("roguelikeMenu");
+  };
+
+  const handleRetryLevel = () => {
+    // Keep totalScore intact - just reset level score (failed level gives no points)
+    setLevelScore(0);
+
+    // Slay the Waves: re-fight the current node with Slay battle
+    // settings (falling through would use standard-roguelike
+    // waves/timer formulas — a different, easier battle)
+    if (runType === "slayTheWaves") {
+      handleSlayStartBattle();
+      return;
+    }
+
+    // Boss Quick Run / Boss Hell Run: custom retry with carryover values
+    if (runType === "bossQuickRun" || runType === "bossHellRun") {
+      // Reset abilities cooldowns
+      const defaultAbilityState: AbilityState = { active: false, cooldownRemaining: 0, durationRemaining: 0 };
+      setInvincible({ ...defaultAbilityState, waterExposure: 0, waterLimit: getWetsuitWaterLimit() });
+      setSuperTap({ ...defaultAbilityState, usesRemaining: SUPER_TAP_USES });
+      setGhostToe(defaultAbilityState);
+      setCrystalBall(defaultAbilityState);
+      setSlowdown(defaultAbilityState);
+      setWaveMagnet(defaultAbilityState);
+      setWaveSurfer(defaultAbilityState);
+      setTowelOff(defaultAbilityState);
+      setDoubleDip(defaultAbilityState);
+      setJumpAround(defaultAbilityState);
+
+      // Show boss popup and start level with current carryover values
+      setShowBossBeachPopup(true);
+      setGameState("playing");
+      setFeetPosition(35);
+      setWaves([]);
+      setWaterTimer(bossQuickRunCarryoverTimerRef.current);
+      levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimerRef.current;
+      setWavesTouched(0);
+      setWavesMissed(0);
+      setRoguelikeWavesToWin(BOSS_QUICK_RUN_WAVES_TO_WIN);
+      // Remaining misses = MAX - total accumulated so far
+      const maxMissesForRun = runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES;
+      setRoguelikeWavesToLose(maxMissesForRun - bossQuickRunTotalMissesRef.current);
+      lastTimeRef.current = 0;
+      waveSpawnTimerRef.current = 0;
+      waveIdRef.current = 0;
+      return;
+    }
+
+    // Standard roguelike retry
+    proceedToLevel(roguelikeLevel);
+  };
+
+  const handleNewRun = () => {
+    // Restart the mode you died in, keeping control preferences
+    // (the old bare startRoguelikeRun(movementMode) call reset
+    // everyone to a standard run with tourist feet + manual tap)
+    if (runType === "slayTheWaves") {
+      setGameState("slayMenu");
+      return;
+    }
+    const restartType: StartScreenRunType =
+      runType === "roguelike" ? "standard" : runType;
+    startRoguelikeRun(movementMode, restartType, footType, autoToeTap ? "auto" : "manual");
+  };
+
   useEffect(() => {
     // Only consume uses in classic mode (not roguelike which is duration-based)
     if (!isRoguelike && isTapping && superTap.active && superTap.usesRemaining !== undefined && superTap.usesRemaining > 0) {
@@ -5272,189 +5404,28 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
       {/* Boss Quick Run Level Complete Screen */}
       {gameState === "bossQuickRunLevelComplete" && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-gradient-to-b from-slate-900 via-purple-900/30 to-slate-900 p-4">
-          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full border-2 border-amber-500/50 shadow-2xl text-center">
-            <div className="text-amber-400 text-sm uppercase tracking-wider mb-2">Level {roguelikeLevel} Complete</div>
-            <div className="text-2xl font-display text-white mb-1">
-              🏖️ {BEACH_EFFECTS.find(e => e.type === completedBeachForDisplay)?.name}
-            </div>
-            
-            {/* Score Display */}
-            <div className="my-6 space-y-4">
-              <div className="bg-slate-900/50 rounded-lg p-4">
-                <p className="text-white/60 text-sm mb-1">Level Score</p>
-                <p className="text-3xl font-display text-amber-400 font-mono">+{bossQuickRunLevelScore}</p>
-                <p className="text-white/40 text-xs mt-1">
-                  10 × Level {roguelikeLevel} × ({(bossQuickRunCarryoverTimer / 1000).toFixed(1)}s + {BOSS_QUICK_RUN_MAX_MISSES - bossQuickRunTotalMisses} misses)
-                </p>
-              </div>
-              <div className="bg-slate-900/50 rounded-lg p-4">
-                <p className="text-white/60 text-sm mb-1">Total Score</p>
-                <p className="text-3xl font-display text-purple-400 font-mono">{totalScore}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="bg-slate-900/30 rounded-lg p-3">
-                  <p className="text-cyan-400/70">Time Remaining</p>
-                  <p className="text-cyan-400 font-mono text-lg">{(bossQuickRunCarryoverTimer / 1000).toFixed(1)}s</p>
-                </div>
-                <div className="bg-slate-900/30 rounded-lg p-3">
-                  <p className="text-pink-400/70">Misses</p>
-                  <p className="text-pink-400 font-mono text-lg">{bossQuickRunTotalMisses}/{BOSS_QUICK_RUN_MAX_MISSES}</p>
-                </div>
-              </div>
-            </div>
-            
-            <Button
-              onClick={() => {
-                // Set next beach effect
-                if (bossQuickRunNextBeach) {
-                  setBeachEffectWithRef(bossQuickRunNextBeach);
-                }
-                
-                // Increment level
-                const nextLevel = roguelikeLevel + 1;
-                setRoguelikeLevel(nextLevel);
-                roguelikeLevelRef.current = nextLevel;
-                
-                // Reset all ability cooldowns for the new level
-                const defaultAbilityState: AbilityState = { active: false, cooldownRemaining: 0, durationRemaining: 0 };
-                setInvincible({ ...defaultAbilityState, waterExposure: 0, waterLimit: getWetsuitWaterLimit() });
-                setSuperTap({ ...defaultAbilityState, usesRemaining: SUPER_TAP_USES });
-                setGhostToe(defaultAbilityState);
-                setCrystalBall(defaultAbilityState);
-                setSlowdown(defaultAbilityState);
-                setWaveMagnet(defaultAbilityState);
-                setWaveSurfer(defaultAbilityState);
-                setTowelOff(defaultAbilityState);
-                setDoubleDip(defaultAbilityState);
-                setJumpAround(defaultAbilityState);
-                
-                // Show boss popup and start next level
-                setShowBossBeachPopup(true);
-                setGameState("playing");
-                setFeetPosition(35);
-                setWaves([]);
-                setWaterTimer(bossQuickRunCarryoverTimer);
-                levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimer;
-                setWavesTouched(0);
-                setWavesMissed(0);
-                // Fixed denominator - game over handled by checking total misses against MAX
-                const maxMissesForRun = runType === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES;
-                setRoguelikeWavesToLose(maxMissesForRun - bossQuickRunTotalMisses);
-                lastTimeRef.current = 0;
-                waveSpawnTimerRef.current = 0;
-                waveIdRef.current = 0;
-              }}
-              className="w-full h-14 text-lg font-display bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white border-none shadow-lg"
-            >
-              Continue to Level {roguelikeLevel + 1}
-            </Button>
-          </div>
-        </div>
+        <BossRunLevelCompleteScreen
+          roguelikeLevel={roguelikeLevel}
+          completedBeachForDisplay={completedBeachForDisplay}
+          bossQuickRunLevelScore={bossQuickRunLevelScore}
+          bossQuickRunCarryoverTimer={bossQuickRunCarryoverTimer}
+          bossQuickRunTotalMisses={bossQuickRunTotalMisses}
+          totalScore={totalScore}
+          onContinue={handleBossRunContinue}
+        />
       )}
 
       {/* Boss Quick Run Victory Screen */}
       {gameState === "bossQuickRunVictory" && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-gradient-to-b from-amber-900/80 via-purple-900/50 to-slate-900 p-4">
-          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full border-2 border-amber-400 shadow-2xl shadow-amber-500/30 text-center">
-            {/* Victory Header */}
-            <div className="mb-4">
-              <div className="text-6xl mb-2">🏆</div>
-              <h2 className="text-3xl font-display text-amber-400 mb-1">
-                VICTORY!
-              </h2>
-              <p className="text-white/70">
-                You conquered all 10 Boss Beaches!
-              </p>
-            </div>
-            
-            {/* High Score Badge */}
-            {bossQuickRunIsNewHighScore && (
-              <div className="bg-gradient-to-r from-amber-500/30 to-orange-500/30 border border-amber-400 rounded-lg p-3 mb-4 animate-pulse">
-                <p className="text-amber-300 font-display text-lg">🌟 NEW HIGH SCORE! 🌟</p>
-              </div>
-            )}
-            
-            {/* Final Score */}
-            <div className="bg-slate-900/50 rounded-lg p-4 mb-4">
-              <p className="text-white/60 text-sm mb-1">Final Score</p>
-              <p className="text-5xl font-display text-amber-400 font-mono">{totalScore}</p>
-            </div>
-            
-            {/* High Score Display */}
-            <div className="bg-slate-900/30 rounded-lg p-3 mb-4">
-              <p className="text-white/50 text-sm">High Score</p>
-              <p className="text-2xl font-display text-purple-400 font-mono">{bossQuickRunHighScore}</p>
-            </div>
-            
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 gap-3 mb-6 text-sm">
-              <div className="bg-slate-900/30 rounded-lg p-3">
-                <p className="text-cyan-400/70">Time Remaining</p>
-                <p className="text-cyan-400 font-mono text-lg">{(bossQuickRunCarryoverTimer / 1000).toFixed(1)}s</p>
-              </div>
-              <div className="bg-slate-900/30 rounded-lg p-3">
-                <p className="text-pink-400/70">Total Misses</p>
-                <p className="text-pink-400 font-mono text-lg">{bossQuickRunTotalMisses}/{BOSS_QUICK_RUN_MAX_MISSES}</p>
-              </div>
-            </div>
-            
-            {/* Abilities Used */}
-            <div className="mb-6">
-              <p className="text-white/50 text-sm mb-2">Abilities Used</p>
-              <div className="flex justify-center gap-2">
-                {selectedAbilities.map((type) => {
-                  const info = {
-                    wetsuit: { icon: <Shirt className="w-5 h-5" />, color: "text-yellow-400", bgColor: "bg-yellow-500/20" },
-                    superTap: { icon: <Zap className="w-5 h-5" />, color: "text-orange-400", bgColor: "bg-orange-500/20" },
-                    ghostToe: { icon: <Ghost className="w-5 h-5" />, color: "text-purple-400", bgColor: "bg-purple-500/20" },
-                    crystalBall: { icon: <Shell className="w-5 h-5" />, color: "text-cyan-400", bgColor: "bg-cyan-500/20" },
-                    slowdown: { icon: <Snail className="w-5 h-5" />, color: "text-pink-400", bgColor: "bg-pink-500/20" },
-                    waveMagnet: { icon: <Magnet className="w-5 h-5" />, color: "text-red-400", bgColor: "bg-red-500/20" },
-                    waveSurfer: { icon: <Waves className="w-5 h-5" />, color: "text-teal-400", bgColor: "bg-teal-500/20" },
-                    towelOff: { icon: <Wind className="w-5 h-5" />, color: "text-sky-400", bgColor: "bg-sky-500/20" },
-                    doubleDip: { icon: <span className="w-5 h-5 flex items-center justify-center font-bold text-xs">2x</span>, color: "text-emerald-400", bgColor: "bg-emerald-500/20" },
-                    jumpAround: { icon: <Rabbit className="w-5 h-5" />, color: "text-lime-400", bgColor: "bg-lime-500/20" },
-                  }[type];
-                  return (
-                    <div
-                      key={type}
-                      className={cn("p-2 rounded-lg", info?.bgColor)}
-                    >
-                      <span className={info?.color}>{info?.icon}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            
-            {/* Play Again Button */}
-            <Button
-              onClick={() => {
-                // Reset all Boss Quick Run state
-                setBossQuickRunUsedBeaches([]);
-                setBossQuickRunCarryoverTimer(BOSS_QUICK_RUN_STARTING_WATER_TIME);
-                bossQuickRunCarryoverTimerRef.current = BOSS_QUICK_RUN_STARTING_WATER_TIME;
-                setBossQuickRunTotalMisses(0);
-                bossQuickRunTotalMissesRef.current = 0;
-                setBossQuickRunLevelScore(0);
-                setBossQuickRunNextBeach(null);
-                setBossQuickRunIsNewHighScore(false);
-                setRoguelikeLevel(1);
-                roguelikeLevelRef.current = 1;
-                setTotalScore(0);
-                setUnlockedAbilities([]);
-                setSelectedAbilities([]);
-                
-                // Go back to roguelike menu
-                setGameState("roguelikeMenu");
-              }}
-              className="w-full h-14 text-lg font-display bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white border-none shadow-lg"
-            >
-              Play Again
-            </Button>
-          </div>
-        </div>
+        <BossRunVictoryScreen
+          bossQuickRunIsNewHighScore={bossQuickRunIsNewHighScore}
+          totalScore={totalScore}
+          bossQuickRunHighScore={bossQuickRunHighScore}
+          bossQuickRunCarryoverTimer={bossQuickRunCarryoverTimer}
+          bossQuickRunTotalMisses={bossQuickRunTotalMisses}
+          selectedAbilities={selectedAbilities}
+          onPlayAgain={handleBossRunPlayAgain}
+        />
       )}
 
       {/* Slay the Waves Start Screen */}
@@ -5569,75 +5540,25 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       
       {/* Slay Act Complete */}
       {gameState === "slayActComplete" && slayMap && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-md mx-4 text-center border-2 border-purple-500/50 shadow-2xl">
-            <h2 className="text-3xl font-display text-purple-400 mb-2">
-              Act {slayMap.actNumber - 1} Complete!
-            </h2>
-            <p className="text-white/70 mb-1">
-              {slayMap.actNumber === 2 ? "The Shallows conquered. The Deep awaits..." : "The Deep conquered. The Abyss awaits..."}
-            </p>
-            <p className="text-yellow-400 text-2xl font-mono font-bold my-4">
-              💰 {slayGold} gold
-            </p>
-            <p className="text-white/50 text-sm mb-6">
-              {unlockedAbilities.length} abilities • {selectedAbilities.length}/4 equipped
-            </p>
-            <Button
-              onClick={() => setGameState("slayMap")}
-              className="bg-purple-600 hover:bg-purple-500 text-white font-display px-8 py-4 text-lg"
-            >
-              Enter Act {slayMap.actNumber}
-            </Button>
-          </div>
-        </div>
+        <SlayActCompleteScreen
+          actNumber={slayMap.actNumber}
+          slayGold={slayGold}
+          unlockedAbilities={unlockedAbilities}
+          selectedAbilities={selectedAbilities}
+          onEnterAct={() => setGameState("slayMap")}
+        />
       )}
 
       {/* Slay Victory */}
       {gameState === "slayVictory" && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-md mx-4 text-center border-2 border-yellow-500/50 shadow-2xl">
-            <h2 className="text-4xl font-display text-yellow-400 mb-2" style={{ textShadow: "0 0 30px hsla(45, 100%, 50%, 0.5)" }}>
-              🏆 Victory! 🏆
-            </h2>
-            <p className="text-white/70 mb-4">You conquered all three acts!</p>
-            <div className="py-4 bg-yellow-500/10 rounded-lg border border-yellow-500/20 mb-4">
-              <p className="text-yellow-400/70 text-xs uppercase tracking-widest mb-1">Final Score</p>
-              <p className="text-5xl font-display text-yellow-400 font-mono">
-                {totalScore.toLocaleString()}
-              </p>
-            </div>
-            <div className="flex justify-center gap-6 mb-4 text-sm">
-              <div>
-                <p className="text-white/50">Gold</p>
-                <p className="text-yellow-400 font-mono text-lg">{slayGold}</p>
-              </div>
-              <div>
-                <p className="text-white/50">Level</p>
-                <p className="text-purple-300 font-mono text-lg">{roguelikeLevel}</p>
-              </div>
-              <div>
-                <p className="text-white/50">Abilities</p>
-                <p className="text-cyan-300 font-mono text-lg">{unlockedAbilities.length}</p>
-              </div>
-            </div>
-            <div className="flex gap-3 justify-center">
-              <Button
-                onClick={() => { setGameState("slayMenu"); }}
-                className="bg-yellow-600 hover:bg-yellow-500 text-white font-display px-6 py-3"
-              >
-                New Run
-              </Button>
-              <Button
-                variant="outline"
-                onClick={goToMenu}
-                className="border-white/30 text-white hover:bg-white/10 px-6 py-3"
-              >
-                Menu
-              </Button>
-            </div>
-          </div>
-        </div>
+        <SlayVictoryScreen
+          totalScore={totalScore}
+          slayGold={slayGold}
+          roguelikeLevel={roguelikeLevel}
+          unlockedAbilities={unlockedAbilities}
+          onNewRun={() => { setGameState("slayMenu"); }}
+          onGoToMenu={goToMenu}
+        />
       )}
 
       {/* ============= END SLAY THE WAVES SCREENS ============= */}
@@ -5658,160 +5579,17 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
       {/* Confirm Loadout Screen (when >4 abilities and has previous selection) */}
       {gameState === "confirmLoadout" && isRoguelike && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 overflow-auto py-6 px-4">
-          <div className="bg-slate-800 rounded-xl p-6 max-w-lg mx-4 border-2 border-purple-500/50 shadow-2xl">
-            <div className="flex flex-col items-center gap-6">
-              <div className="text-center">
-                <h2 className="text-2xl sm:text-3xl font-display text-purple-400 mb-2">
-                  Level {roguelikeLevel}
-                </h2>
-                <p className="text-white/70">
-                  {swappingSlot !== null ? "Select replacement:" : "Keep abilities the same or tap any ability to swap it out:"}
-                </p>
-              </div>
-              
-              {swappingSlot === null ? (
-                <>
-                  <div className="w-full grid grid-cols-2 gap-3">
-                    {selectedAbilities.map((type, index) => {
-                      const ability = unlockedAbilities.find(a => a.type === type);
-                      const ABILITY_KEYS_LOCAL = ["C", "V", "B", "N"];
-                      const info = {
-                        wetsuit: { name: "Wet Suit", icon: <Shirt className="w-6 h-6" />, color: "text-yellow-400", bgColor: "bg-yellow-500/20" },
-                        superTap: { name: "Super Tap", icon: <Zap className="w-6 h-6" />, color: "text-orange-400", bgColor: "bg-orange-500/20" },
-                        ghostToe: { name: "Ghost Feet", icon: <Ghost className="w-6 h-6" />, color: "text-purple-400", bgColor: "bg-purple-500/20" },
-                        crystalBall: { name: "Crystal Conch", icon: <Shell className="w-6 h-6" />, color: "text-cyan-400", bgColor: "bg-cyan-500/20" },
-                        slowdown: { name: "Slowdown", icon: <Snail className="w-6 h-6" />, color: "text-pink-400", bgColor: "bg-pink-500/20" },
-                        waveMagnet: { name: "Wave Magnet", icon: <Magnet className="w-6 h-6" />, color: "text-red-400", bgColor: "bg-red-500/20" },
-                        waveSurfer: { name: "Teleport", icon: <Waves className="w-6 h-6" />, color: "text-teal-400", bgColor: "bg-teal-500/20" },
-                        towelOff: { name: "Towel Off", icon: <Wind className="w-6 h-6" />, color: "text-sky-400", bgColor: "bg-sky-500/20" },
-                        doubleDip: { name: "Double Dip", icon: <span className="w-6 h-6 flex items-center justify-center font-bold text-sm">2x</span>, color: "text-emerald-400", bgColor: "bg-emerald-500/20" },
-                        jumpAround: { name: "Jump Around", icon: <Rabbit className="w-6 h-6" />, color: "text-lime-400", bgColor: "bg-lime-500/20" },
-                      }[type];
-                      
-                      return (
-                        <button
-                          key={type}
-                          onClick={() => setSwappingSlot(index)}
-                          className={cn(
-                            "relative flex items-center gap-3 p-3 rounded-lg border-2 transition-all hover:border-purple-400 hover:scale-[1.02]",
-                            info?.bgColor,
-                            "border-slate-600"
-                          )}
-                        >
-                          <div className={cn("p-2 rounded-lg", info?.bgColor)}>
-                            <span className={info?.color}>{info?.icon}</span>
-                          </div>
-                          <div className="text-left flex-1">
-                            <p className={cn("font-semibold text-sm", info?.color)}>{info?.name}</p>
-                            <p className="text-xs text-white/40">Level {(ability?.upgradeCount || 0) + 1}</p>
-                          </div>
-                          <div className="absolute top-1 right-1 bg-slate-700 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                            {ABILITY_KEYS_LOCAL[index]}
-                          </div>
-                          <div className="absolute bottom-1 right-1 text-[10px] text-white/40">
-                            tap to swap
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex gap-3 w-full">
-                    <Button
-                      onClick={handleChangeLoadout}
-                      variant="outline"
-                      className="flex-1 h-12 font-display border-purple-500/50 text-purple-400 hover:bg-purple-500/20"
-                    >
-                      Change All
-                    </Button>
-                    <Button
-                      onClick={handleKeepLoadout}
-                      className="flex-1 h-12 font-display bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white"
-                    >
-                      Ready
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Show the ability being replaced */}
-                  <div className="w-full text-center mb-2">
-                    {(() => {
-                      const replacingType = selectedAbilities[swappingSlot];
-                      const info = {
-                        wetsuit: { name: "Wet Suit", icon: <Shirt className="w-5 h-5" />, color: "text-yellow-400" },
-                        superTap: { name: "Super Tap", icon: <Zap className="w-5 h-5" />, color: "text-orange-400" },
-                        ghostToe: { name: "Ghost Feet", icon: <Ghost className="w-5 h-5" />, color: "text-purple-400" },
-                        crystalBall: { name: "Crystal Conch", icon: <Shell className="w-5 h-5" />, color: "text-cyan-400" },
-                        slowdown: { name: "Slowdown", icon: <Snail className="w-5 h-5" />, color: "text-pink-400" },
-                        waveMagnet: { name: "Wave Magnet", icon: <Magnet className="w-5 h-5" />, color: "text-red-400" },
-                        waveSurfer: { name: "Teleport", icon: <Waves className="w-5 h-5" />, color: "text-teal-400" },
-                        towelOff: { name: "Towel Off", icon: <Wind className="w-5 h-5" />, color: "text-sky-400" },
-                        doubleDip: { name: "Double Dip", icon: <span className="w-5 h-5 flex items-center justify-center font-bold text-xs">2x</span>, color: "text-emerald-400" },
-                        jumpAround: { name: "Jump Around", icon: <Rabbit className="w-5 h-5" />, color: "text-lime-400" },
-                      }[replacingType];
-                      return (
-                        <p className="text-white/50 text-sm flex items-center justify-center gap-2">
-                          Replacing <span className={info?.color}>{info?.icon}</span>
-                          <span className={info?.color}>{info?.name}</span> with:
-                        </p>
-                      );
-                    })()}
-                  </div>
-                  
-                  {/* Show unequipped abilities to swap in */}
-                  <div className="w-full grid grid-cols-2 gap-3">
-                    {unlockedAbilities
-                      .filter(a => !selectedAbilities.includes(a.type))
-                      .map((ability) => {
-                        const info = {
-                          wetsuit: { name: "Wet Suit", icon: <Shirt className="w-6 h-6" />, color: "text-yellow-400", bgColor: "bg-yellow-500/20" },
-                          superTap: { name: "Super Tap", icon: <Zap className="w-6 h-6" />, color: "text-orange-400", bgColor: "bg-orange-500/20" },
-                          ghostToe: { name: "Ghost Feet", icon: <Ghost className="w-6 h-6" />, color: "text-purple-400", bgColor: "bg-purple-500/20" },
-                          crystalBall: { name: "Crystal Conch", icon: <Shell className="w-6 h-6" />, color: "text-cyan-400", bgColor: "bg-cyan-500/20" },
-                          slowdown: { name: "Slowdown", icon: <Snail className="w-6 h-6" />, color: "text-pink-400", bgColor: "bg-pink-500/20" },
-                          waveMagnet: { name: "Wave Magnet", icon: <Magnet className="w-6 h-6" />, color: "text-red-400", bgColor: "bg-red-500/20" },
-                          waveSurfer: { name: "Teleport", icon: <Waves className="w-6 h-6" />, color: "text-teal-400", bgColor: "bg-teal-500/20" },
-                          towelOff: { name: "Towel Off", icon: <Wind className="w-6 h-6" />, color: "text-sky-400", bgColor: "bg-sky-500/20" },
-                          doubleDip: { name: "Double Dip", icon: <span className="w-6 h-6 flex items-center justify-center font-bold text-sm">2x</span>, color: "text-emerald-400", bgColor: "bg-emerald-500/20" },
-                          jumpAround: { name: "Jump Around", icon: <Rabbit className="w-6 h-6" />, color: "text-lime-400", bgColor: "bg-lime-500/20" },
-                        }[ability.type];
-                        
-                        return (
-                          <button
-                            key={ability.type}
-                            onClick={() => handleQuickSwap(ability.type)}
-                            className={cn(
-                              "relative flex items-center gap-3 p-3 rounded-lg border-2 transition-all hover:border-green-400 hover:scale-[1.02]",
-                              info?.bgColor,
-                              "border-slate-600"
-                            )}
-                          >
-                            <div className={cn("p-2 rounded-lg", info?.bgColor)}>
-                              <span className={info?.color}>{info?.icon}</span>
-                            </div>
-                            <div className="text-left flex-1">
-                              <p className={cn("font-semibold text-sm", info?.color)}>{info?.name}</p>
-                              <p className="text-xs text-white/40">Level {ability.upgradeCount + 1}</p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-
-                  <Button
-                    onClick={() => setSwappingSlot(null)}
-                    variant="outline"
-                    className="w-full h-10 font-display border-slate-600 text-white/70 hover:bg-slate-700"
-                  >
-                    Cancel
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+        <ConfirmLoadoutScreen
+          roguelikeLevel={roguelikeLevel}
+          swappingSlot={swappingSlot}
+          selectedAbilities={selectedAbilities}
+          unlockedAbilities={unlockedAbilities}
+          onSelectSwapSlot={(index) => setSwappingSlot(index)}
+          onCancelSwap={() => setSwappingSlot(null)}
+          onChangeLoadout={handleChangeLoadout}
+          onKeepLoadout={handleKeepLoadout}
+          onQuickSwap={handleQuickSwap}
+        />
       )}
 
       {/* Ability Selection Screen (when >4 abilities unlocked) */}
@@ -5829,328 +5607,59 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
       {/* Level Complete Screen (Roguelike) */}
       {gameState === "levelComplete" && isRoguelike && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 overflow-auto py-6 px-4">
-          {/* Celebration overlay - shows during transition */}
-          {!levelCompleteReady && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-40">
-              {/* Burst of particles */}
-              {[...Array(12)].map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute w-3 h-3 rounded-full animate-ping"
-                  style={{
-                    backgroundColor: ['#fbbf24', '#a855f7', '#22d3ee', '#34d399', '#f472b6'][i % 5],
-                    transform: `rotate(${i * 30}deg) translateY(-60px)`,
-                    animationDuration: '0.6s',
-                    animationDelay: `${i * 0.03}s`,
-                    opacity: 0.8,
-                  }}
-                />
-              ))}
-              {/* Central glow */}
-              <div className="absolute w-32 h-32 rounded-full bg-gradient-to-r from-purple-500 via-cyan-400 to-yellow-400 opacity-60 animate-pulse blur-xl" />
-              {/* Level text */}
-              <div className="text-4xl font-display text-white animate-bounce drop-shadow-[0_0_20px_rgba(168,85,247,0.8)]">
-                🎉 Level {roguelikeLevel}!
-              </div>
-            </div>
-          )}
-          
-          {/* Upgrade screen - fades in after celebration */}
-          <BeachFrame beachType={runType === "beachBonanza" ? currentBeachEffect : null}>
-            <div 
-              className={cn(
-                "bg-slate-800 p-6 max-w-lg shadow-2xl transition-all duration-300",
-                runType === "beachBonanza" && currentBeachEffect ? "" : "rounded-xl border-2 border-purple-500/50 mx-4",
-                levelCompleteReady ? "opacity-100 scale-100" : "opacity-0 scale-95"
-              )}
-            >
-            {/* Current Beach Effect Display */}
-            {completedBeachForDisplay && (
-              <div className="mb-4 p-2 bg-orange-900/40 border border-orange-500/50 rounded-lg">
-                <p className="text-orange-400 text-center text-sm">
-                  🏖️ Completed with: <span className="font-semibold">{BEACH_EFFECTS.find(e => e.type === completedBeachForDisplay)?.name}</span>
-                </p>
-              </div>
-            )}
-            
-            <RoguelikeAbilitySelect
-              level={roguelikeLevel}
-              unlockedAbilities={unlockedAbilities}
-              waterTimeBonus={waterTimeBonus}
-              wavesMissedBonus={wavesMissedBonus}
-              baseWaterTime={getRoguelikeLevelSettings(roguelikeLevel + 1).waterTimer}
-              baseWavesToLose={getRoguelikeLevelSettings(roguelikeLevel + 1, lastWavesMissedUpgradeLevel).wavesToLose}
-              previousWavesToLose={getRoguelikeLevelSettings(roguelikeLevel, lastWavesMissedUpgradeLevel).wavesToLose}
-              wavesToWin={getRoguelikeLevelSettings(roguelikeLevel + 1).wavesToWin}
-              previousWavesToWin={getRoguelikeLevelSettings(roguelikeLevel).wavesToWin}
-              permanentUpgrades={permanentUpgrades}
-              excludedAbilities={excludedAbilities}
-              onSelectNewAbility={handleUnlockAbility}
-              onUpgradeAbility={handleUpgradeAbility}
-              onUpgradeWaterTime={handleUpgradeWaterTime}
-              onUpgradeWavesMissed={handleUpgradeWavesMissed}
-              onSelectPermanentUpgrade={handleSelectPermanentUpgrade}
-              onContinueWithoutUpgrade={handleContinueWithoutUpgrade}
-              isFirstUnlock={roguelikeLevel === 1}
-              disabled={!levelCompleteReady}
-              upcomingBossEffect={getUpcomingBossEffect()}
-              levelScore={levelScore}
-              totalScore={totalScore}
-            />
-            
-            {/* Pause Run Button */}
-            {levelCompleteReady && (
-              <div className="mt-4 pt-4 border-t border-white/10">
-                <Button
-                  variant="outline"
-                  onClick={saveRoguelikeRun}
-                  className="w-full border-white/30 text-white/70 hover:bg-white/10"
-                >
-                  Pause Run & Return to Menu
-                </Button>
-              </div>
-            )}
-            </div>
-          </BeachFrame>
-        </div>
+        <LevelCompleteScreen
+          roguelikeLevel={roguelikeLevel}
+          levelCompleteReady={levelCompleteReady}
+          runType={runType}
+          currentBeachEffect={currentBeachEffect}
+          completedBeachForDisplay={completedBeachForDisplay}
+          unlockedAbilities={unlockedAbilities}
+          waterTimeBonus={waterTimeBonus}
+          wavesMissedBonus={wavesMissedBonus}
+          lastWavesMissedUpgradeLevel={lastWavesMissedUpgradeLevel}
+          permanentUpgrades={permanentUpgrades}
+          excludedAbilities={excludedAbilities}
+          upcomingBossEffect={getUpcomingBossEffect()}
+          levelScore={levelScore}
+          totalScore={totalScore}
+          onSelectNewAbility={handleUnlockAbility}
+          onUpgradeAbility={handleUpgradeAbility}
+          onUpgradeWaterTime={handleUpgradeWaterTime}
+          onUpgradeWavesMissed={handleUpgradeWavesMissed}
+          onSelectPermanentUpgrade={handleSelectPermanentUpgrade}
+          onContinueWithoutUpgrade={handleContinueWithoutUpgrade}
+          onPauseRun={saveRoguelikeRun}
+        />
       )}
 
       {/* Game Over Screen (Standard) */}
       {gameState === "gameOver" && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-md mx-4 text-center border-2 border-red-500/50 shadow-2xl">
-            <h2 className="text-3xl font-display text-red-400 mb-2">
-              Time's Up!
-            </h2>
-            <p className="text-white/60 text-sm mb-2 capitalize">{difficulty} Mode</p>
-            <p className="text-white/80 mb-2">
-              {gameOverReason === "missed" 
-                ? "You missed too many waves!" 
-                : "Your feet got too soggy!"}
-            </p>
-            <div className="my-6">
-              <p className="text-white/60 text-sm uppercase tracking-wider">
-                Waves Touched
-              </p>
-              <p className="text-5xl font-display text-cyan-300 font-mono">
-                {wavesTouched}
-              </p>
-            </div>
-            <div className="flex gap-4 justify-center flex-wrap">
-              <Button
-                onClick={startGame}
-                className="bg-cyan-600 hover:bg-cyan-500 text-white font-display px-6 py-4"
-              >
-                Play Again
-              </Button>
-              <Button
-                variant="outline"
-                onClick={goToMenu}
-                className="border-white/30 text-white hover:bg-white/10 px-4 py-4"
-              >
-                Menu
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ClassicGameOverScreen
+          difficulty={difficulty}
+          gameOverReason={gameOverReason}
+          wavesTouched={wavesTouched}
+          onPlayAgain={startGame}
+          onGoToMenu={goToMenu}
+        />
       )}
 
       {/* Roguelike Game Over Screen */}
       {gameState === "roguelikeGameOver" && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60">
-          <div className="bg-slate-800 rounded-xl p-8 max-w-md mx-4 text-center border-2 border-purple-500/50 shadow-2xl">
-            <h2 className="text-3xl font-display text-purple-400 mb-1">
-              Run Over!
-            </h2>
-            <p className="text-white/50 text-sm mb-3">
-              {gameOverReason === "missed"
-                ? "You missed too many waves!"
-                : "Your feet got too soggy!"}
-            </p>
-
-            <div className="my-4 space-y-4">
-              <div className="py-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-                <p className="text-yellow-400/70 text-xs uppercase tracking-widest mb-1">
-                  Final Score
-                </p>
-                <p className="text-5xl font-display text-yellow-400 font-mono" style={{ textShadow: "0 0 20px hsla(45, 100%, 50%, 0.3)" }}>
-                  {totalScore.toLocaleString()}
-                </p>
-              </div>
-              <div className="flex justify-center gap-6">
-                <div>
-                  <p className="text-white/60 text-sm uppercase tracking-wider">
-                    Final Level
-                  </p>
-                  <p className="text-2xl font-display text-purple-300 font-mono">
-                    {roguelikeLevel}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-white/60 text-sm uppercase tracking-wider">
-                    Total Waves
-                  </p>
-                  <p className="text-2xl font-display text-cyan-300 font-mono">
-                    {roguelikeTotalWaves + wavesTouched}
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-center gap-6">
-                <div>
-                  <p className="text-white/60 text-sm uppercase tracking-wider">
-                    Total Steps
-                  </p>
-                  <p className="text-2xl font-display text-orange-300 font-mono">
-                    {totalSteps}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-white/60 text-sm uppercase tracking-wider">
-                    Total Toe Taps
-                  </p>
-                  <p className="text-2xl font-display text-pink-300 font-mono">
-                    {totalToeTaps}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <p className="text-white/60 text-sm uppercase tracking-wider">
-                  Loadout
-                </p>
-                <div className="flex justify-center gap-2 mt-2 flex-wrap">
-                  {selectedAbilities.length === 0 ? (
-                    <span className="text-white/40 text-sm">None</span>
-                  ) : (
-                    selectedAbilities.map((type) => {
-                      const ability = unlockedAbilities.find(a => a.type === type);
-                      return (
-                        <div 
-                          key={type}
-                          className={cn(
-                            "px-3 py-1 rounded-lg text-sm",
-                            type === "wetsuit" && "bg-yellow-500/20 text-yellow-400",
-                            type === "superTap" && "bg-orange-500/20 text-orange-400",
-                            type === "ghostToe" && "bg-purple-500/20 text-purple-400",
-                            type === "crystalBall" && "bg-cyan-500/20 text-cyan-400",
-                            type === "slowdown" && "bg-pink-500/20 text-pink-400",
-                            type === "waveMagnet" && "bg-red-500/20 text-red-400",
-                            type === "waveSurfer" && "bg-teal-500/20 text-teal-400",
-                            type === "towelOff" && "bg-sky-500/20 text-sky-400",
-                            type === "doubleDip" && "bg-emerald-500/20 text-emerald-400",
-                            type === "jumpAround" && "bg-lime-500/20 text-lime-400"
-                          )}
-                        >
-                          {type === "wetsuit" && "Wet Suit"}
-                          {type === "superTap" && "Super Tap"}
-                          {type === "ghostToe" && "Ghost Feet"}
-                          {type === "crystalBall" && "Crystal Conch"}
-                          {type === "slowdown" && "Slowdown"}
-                          {type === "waveMagnet" && "Wave Magnet"}
-                          {type === "waveSurfer" && "Teleport"}
-                          {type === "towelOff" && "Towel Off"}
-                          {type === "doubleDip" && "Double Dip"}
-                          {type === "jumpAround" && "Jump Around"}
-                          {ability && ` Lv${ability.upgradeCount + 1}`}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            <div className={cn(
-              "flex gap-4 justify-center flex-wrap transition-all duration-300",
-              gameOverReady ? "opacity-100" : "opacity-50 pointer-events-none"
-            )}>
-              <Button
-                onClick={() => {
-                  // Keep totalScore intact - just reset level score (failed level gives no points)
-                  setLevelScore(0);
-                  
-                  // Slay the Waves: re-fight the current node with Slay battle
-                  // settings (falling through would use standard-roguelike
-                  // waves/timer formulas — a different, easier battle)
-                  if (runType === "slayTheWaves") {
-                    handleSlayStartBattle();
-                    return;
-                  }
-
-                  // Boss Quick Run / Boss Hell Run: custom retry with carryover values
-                  if (runType === "bossQuickRun" || runType === "bossHellRun") {
-                    // Reset abilities cooldowns
-                    const defaultAbilityState: AbilityState = { active: false, cooldownRemaining: 0, durationRemaining: 0 };
-                    setInvincible({ ...defaultAbilityState, waterExposure: 0, waterLimit: getWetsuitWaterLimit() });
-                    setSuperTap({ ...defaultAbilityState, usesRemaining: SUPER_TAP_USES });
-                    setGhostToe(defaultAbilityState);
-                    setCrystalBall(defaultAbilityState);
-                    setSlowdown(defaultAbilityState);
-                    setWaveMagnet(defaultAbilityState);
-                    setWaveSurfer(defaultAbilityState);
-                    setTowelOff(defaultAbilityState);
-                    setDoubleDip(defaultAbilityState);
-                    setJumpAround(defaultAbilityState);
-                    
-                    // Show boss popup and start level with current carryover values
-                    setShowBossBeachPopup(true);
-                    setGameState("playing");
-                    setFeetPosition(35);
-                    setWaves([]);
-                    setWaterTimer(bossQuickRunCarryoverTimerRef.current);
-                    levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimerRef.current;
-                    setWavesTouched(0);
-                    setWavesMissed(0);
-                    setRoguelikeWavesToWin(BOSS_QUICK_RUN_WAVES_TO_WIN);
-                    // Remaining misses = MAX - total accumulated so far
-                    const maxMissesForRun = runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES;
-                    setRoguelikeWavesToLose(maxMissesForRun - bossQuickRunTotalMissesRef.current);
-                    lastTimeRef.current = 0;
-                    waveSpawnTimerRef.current = 0;
-                    waveIdRef.current = 0;
-                    return;
-                  }
-                  
-                  // Standard roguelike retry
-                  proceedToLevel(roguelikeLevel);
-                }}
-                className="bg-cyan-600 hover:bg-cyan-500 text-white font-display px-6 py-4"
-                disabled={!gameOverReady}
-              >
-                Retry Level
-              </Button>
-              <Button
-                onClick={() => {
-                  // Restart the mode you died in, keeping control preferences
-                  // (the old bare startRoguelikeRun(movementMode) call reset
-                  // everyone to a standard run with tourist feet + manual tap)
-                  if (runType === "slayTheWaves") {
-                    setGameState("slayMenu");
-                    return;
-                  }
-                  const restartType: StartScreenRunType =
-                    runType === "roguelike" ? "standard" : runType;
-                  startRoguelikeRun(movementMode, restartType, footType, autoToeTap ? "auto" : "manual");
-                }}
-                className="bg-purple-600 hover:bg-purple-500 text-white font-display px-6 py-4"
-                disabled={!gameOverReady}
-              >
-                New Run
-              </Button>
-              <Button
-                variant="outline"
-                onClick={goToMenu}
-                className="border-white/30 text-white hover:bg-white/10 px-4 py-4"
-                disabled={!gameOverReady}
-              >
-                Menu
-              </Button>
-            </div>
-            {!gameOverReady && (
-              <p className="text-white/40 text-sm mt-4 animate-pulse">Please wait...</p>
-            )}
-          </div>
-        </div>
+        <RoguelikeGameOverScreen
+          gameOverReason={gameOverReason}
+          totalScore={totalScore}
+          roguelikeLevel={roguelikeLevel}
+          roguelikeTotalWaves={roguelikeTotalWaves}
+          wavesTouched={wavesTouched}
+          totalSteps={totalSteps}
+          totalToeTaps={totalToeTaps}
+          selectedAbilities={selectedAbilities}
+          unlockedAbilities={unlockedAbilities}
+          gameOverReady={gameOverReady}
+          onRetryLevel={handleRetryLevel}
+          onNewRun={handleNewRun}
+          onGoToMenu={goToMenu}
+        />
       )}
 
       {/* Controls hint */}
