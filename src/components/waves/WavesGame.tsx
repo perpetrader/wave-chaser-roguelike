@@ -364,7 +364,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const [wavesTouched, setWavesTouched] = useState(0);
   const [wavesMissed, setWavesMissed] = useState(0);
   const [gameOverReason, setGameOverReason] = useState<GameOverReason>(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(() => localStorage.getItem("waveChaser_muted") === "1");
   const [levelCelebrating, setLevelCelebrating] = useState(false); // Shows celebration overlay before level complete
 
   // Roguelike state
@@ -848,21 +848,30 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     };
   }, []);
 
-  // Handle mute state
+  // Handle mute state (persisted so a mute choice survives reloads)
   useEffect(() => {
+    localStorage.setItem("waveChaser_muted", isMuted ? "1" : "0");
     if (audioRef.current) {
       audioRef.current.muted = isMuted;
     }
   }, [isMuted]);
 
-  // Play/pause music based on game state
+  // Play/pause music based on game state. Keep playing through in-run
+  // screens (level complete, map, shop) for continuity, but stop on the
+  // menus and game-over — previously only game-over paused, so the loop
+  // played forever once any run had started.
   useEffect(() => {
-    if (audioRef.current) {
-      if (gameState === "playing") {
-        audioRef.current.play().catch(() => {});
-      } else if (gameState === "gameOver" || gameState === "roguelikeGameOver") {
-        audioRef.current.pause();
-      }
+    if (!audioRef.current) return;
+    if (gameState === "playing") {
+      audioRef.current.play().catch(() => {});
+    } else if (
+      gameState === "menu" ||
+      gameState === "roguelikeMenu" ||
+      gameState === "slayMenu" ||
+      gameState === "gameOver" ||
+      gameState === "roguelikeGameOver"
+    ) {
+      audioRef.current.pause();
     }
   }, [gameState]);
 
