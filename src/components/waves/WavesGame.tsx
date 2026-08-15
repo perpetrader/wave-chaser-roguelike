@@ -81,6 +81,7 @@ import {
   heavySandPenaltyMultiplier,
   gummyToeExtensionMultiplier,
 } from "./game/beachEffectScaling";
+import { tickAbilityState } from "./game/simulation";
 
 interface WavesGameProps {
   startInRoguelike?: boolean;
@@ -364,17 +365,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     difficultyRef.current = difficulty;
   }, [difficulty]);
 
-  useEffect(() => {
-    wavesTouchedRef.current = wavesTouched;
-  }, [wavesTouched]);
-
-  useEffect(() => {
-    wavesMissedRef.current = wavesMissed;
-  }, [wavesMissed]);
-
-  useEffect(() => {
-    waterTimerRef.current = waterTimer;
-  }, [waterTimer]);
+  // NOTE: waves / waterTimer / wavesTouched / wavesMissed have NO state->ref
+  // sync effects. The game loop owns their refs (simulation source of truth)
+  // and commits to React state only when the rendered value changes; all
+  // writers outside the loop must go through the commit* helpers below.
 
   useEffect(() => {
     isRoguelikeRef.current = isRoguelike;
@@ -392,9 +386,27 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     roguelikeWavesToLoseRef.current = roguelikeWavesToLose;
   }, [roguelikeWavesToLose]);
 
-  useEffect(() => {
-    wavesRef.current = waves;
-  }, [waves]);
+  // Simulation-state commit helpers: keep ref (simulation truth) and React
+  // state (render snapshot) in lockstep for writers outside the game loop.
+  const committedWaterTimerRef = useRef(0);
+  const wavesRenderDirtyRef = useRef(false); // set when wavesRef changes outside the sim block (spawn)
+  const commitWaves = useCallback((w: Wave[]) => {
+    wavesRef.current = w;
+    setWaves(w);
+  }, []);
+  const commitWaterTimer = useCallback((t: number) => {
+    waterTimerRef.current = t;
+    committedWaterTimerRef.current = t;
+    setWaterTimer(t);
+  }, []);
+  const commitWavesTouched = useCallback((n: number) => {
+    wavesTouchedRef.current = n;
+    setWavesTouched(n);
+  }, []);
+  const commitWavesMissed = useCallback((n: number) => {
+    wavesMissedRef.current = n;
+    setWavesMissed(n);
+  }, []);
 
   useEffect(() => {
     unlockedAbilitiesRef.current = unlockedAbilities;
@@ -933,7 +945,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           touched: false,
           peakTimer: 0,
         };
-        setWaves((prev) => [...prev, newWave]);
+        // Push into the simulation ref; the main sim block below starts from
+        // wavesRef and commits to React state (a new wave is a render change)
+        wavesRef.current = [...wavesRef.current, newWave];
+        wavesRenderDirtyRef.current = true;
         waveSpawnTimerRef.current = 0;
         
         // Wave Surfer: execute queued teleport if one is pending
@@ -1071,7 +1086,13 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         }
       }
 
-      setWaves((prev) => {
+      // ── Main simulation block ──────────────────────────────────────────
+      // Runs as plain loop code over wavesRef (simulation source of truth).
+      // This used to be a setWaves((prev) => ...) updater with nested
+      // setState calls and setTimeout side effects inside it — updaters must
+      // be pure, and the impurity was a standing double-fire hazard.
+      {
+        const prev = wavesRef.current;
         // Gummy Beach: boss blocks toe tap entirely, non-boss reduces it
         const isGummyBeachActive = currentBeachEffectRef.current === "gummyBeach";
         const isGummyBoss = isGummyBeachActive && (!hasLeveledBeachEffects() || beachLevelRef.current >= 5);
@@ -1094,6 +1115,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         const effectiveToeRow = ghostToeRef.current.active ? baseToeRow - GHOST_TOE_EXTENSION : baseToeRow;
         const heelRow = baseToeRow + 2; // Feet are 2 pixels tall
         let newTouches = 0;
+        let missedThisFrame = 0;
 
         const updated = prev
           .map((wave) => {
@@ -1165,29 +1187,34 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             // Remove waves that have left the beach (returned to ocean)
             if (wave.phase === "outgoing" && wave.row < OCEAN_HEIGHT) {
               // Count as missed if not touched
-                if (!wave.touched) {
-                setWavesMissed((prev) => {
-                  const newMissed = prev + 1;
-                  // For boss runs, check against the FIXED max misses constant, not the per-level remaining
-                  const isBossRun = runTypeRef.current === "bossQuickRun" || runTypeRef.current === "bossHellRun";
-                  const totalMissedForCheck = isBossRun 
-                    ? (bossQuickRunTotalMissesRef.current + newMissed)
-                    : newMissed;
-                  // Use fixed max for boss runs to avoid mismatch with per-level remaining calculation
-                  const maxMissedForCheck = isBossRun
-                    ? (runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES)
-                    : maxMissed;
-                  if (totalMissedForCheck >= maxMissedForCheck) {
-                    setGameOverReason("missed");
-                    setGameState(isRoguelikeRef.current ? "roguelikeGameOver" : "gameOver");
-                  }
-                  return newMissed;
-                });
+              if (!wave.touched) {
+                missedThisFrame++;
               }
               return false;
             }
             return true;
           });
+
+        // Apply misses and check the lose condition in plain code (this used
+        // to run inside a setWavesMissed updater nested in the filter above)
+        if (missedThisFrame > 0) {
+          const newMissed = wavesMissedRef.current + missedThisFrame;
+          wavesMissedRef.current = newMissed;
+          setWavesMissed(newMissed);
+          // For boss runs, check against the FIXED max misses constant, not the per-level remaining
+          const isBossRun = runTypeRef.current === "bossQuickRun" || runTypeRef.current === "bossHellRun";
+          const totalMissedForCheck = isBossRun
+            ? (bossQuickRunTotalMissesRef.current + newMissed)
+            : newMissed;
+          // Use fixed max for boss runs to avoid mismatch with per-level remaining calculation
+          const maxMissedForCheck = isBossRun
+            ? (runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES)
+            : maxMissed;
+          if (totalMissedForCheck >= maxMissedForCheck) {
+            setGameOverReason("missed");
+            setGameState(isRoguelikeRef.current ? "roguelikeGameOver" : "gameOver");
+          }
+        }
 
         if (newTouches > 0) {
           // Wave Surfer: teleport to next UNTOUCHED incoming wave when touching a wave
@@ -1327,10 +1354,21 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               waveSurferQueuedTeleportRef.current = true;
             }
           }
-          setWavesTouched((p) => {
-            const newTotal = p + newTouches;
-            // Check for roguelike level win condition
-            if (isRoguelikeRef.current && newTotal >= roguelikeWavesToWinRef.current) {
+          // Apply touches and check the win condition in plain code (this
+          // used to run inside a setWavesTouched updater — the win block
+          // could double-fire if a second wave was touched before commit)
+          {
+            const newTotal = wavesTouchedRef.current + newTouches;
+            wavesTouchedRef.current = newTotal;
+            setWavesTouched(newTotal);
+            // Check for roguelike level win condition. Fire only on CROSSING
+            // the threshold so a touch on a later frame (before the
+            // celebration pause kicks in) can't run the win block twice.
+            if (
+              isRoguelikeRef.current &&
+              newTotal >= roguelikeWavesToWinRef.current &&
+              newTotal - newTouches < roguelikeWavesToWinRef.current
+            ) {
               setRoguelikeTotalWaves((prev) => prev + newTotal);
               
               // Calculate level score
@@ -1502,8 +1540,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 }
               }, 1000); // 1 second delay for payoff moment
             }
-            return newTotal;
-          });
+          }
         }
 
         // Ghost toe: the extended 0.5 pixel doesn't count against water timer
@@ -1590,36 +1627,33 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           const wetShoesMultiplier = 1 - (permanentUpgradesRef.current.wetShoes * 0.1);
           // Foot type water drain modifier
           const footTypeDrainMultiplier = FOOT_TYPE_MODIFIERS[footTypeRef.current].drainMultiplier;
-          setWaterTimer((prev) => {
-            const newTime = prev - deltaTime * drainMultiplier * wetShoesMultiplier * spikeDrainMultiplier * footTypeDrainMultiplier;
-            if (newTime <= 0) {
-              setGameOverReason("timer");
-              setGameState(isRoguelikeRef.current ? "roguelikeGameOver" : "gameOver");
-              return 0;
-            }
-            return newTime;
-          });
+          const newTime = waterTimerRef.current - deltaTime * drainMultiplier * wetShoesMultiplier * spikeDrainMultiplier * footTypeDrainMultiplier;
+          if (newTime <= 0) {
+            waterTimerRef.current = 0;
+            setGameOverReason("timer");
+            setGameState(isRoguelikeRef.current ? "roguelikeGameOver" : "gameOver");
+          } else {
+            waterTimerRef.current = newTime;
+          }
         }
         
         // Towel Off: add 20% of time not in water back to timer
         if (!touching && towelOffRef.current.active) {
-          setWaterTimer((prev) => {
-            // Boss Quick Run / Boss Hell Run: cap at BASE starting time (50s/30s), never exceed it
-            const isBossQuickRun = runTypeRef.current === "bossQuickRun";
-            const isBossHellRun = runTypeRef.current === "bossHellRun";
-            const baseStartingTime = isBossQuickRun 
-              ? BOSS_QUICK_RUN_BASE_WATER_TIME 
-              : isBossHellRun
-              ? BOSS_HELL_RUN_STARTING_WATER_TIME
-              : (levelStartingWaterTimerRef.current || 6000);
-            
-            // Don't add time if already at or above base starting value
-            if (prev >= baseStartingTime) return prev;
-            
+          // Boss Quick Run / Boss Hell Run: cap at BASE starting time (50s/30s), never exceed it
+          const isBossQuickRun = runTypeRef.current === "bossQuickRun";
+          const isBossHellRun = runTypeRef.current === "bossHellRun";
+          const baseStartingTime = isBossQuickRun
+            ? BOSS_QUICK_RUN_BASE_WATER_TIME
+            : isBossHellRun
+            ? BOSS_HELL_RUN_STARTING_WATER_TIME
+            : (levelStartingWaterTimerRef.current || 6000);
+
+          // Don't add time if already at or above base starting value
+          if (waterTimerRef.current < baseStartingTime) {
             // Add 20% of deltaTime back to timer, capped at base starting time
             const recovery = deltaTime * 0.2;
-            return Math.min(baseStartingTime, prev + recovery);
-          });
+            waterTimerRef.current = Math.min(baseStartingTime, waterTimerRef.current + recovery);
+          }
         }
         
         // Wave Surfer auto-move removed - now uses instant teleport on wave touch
@@ -1805,8 +1839,30 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           beachPersonSpawnTimerRef.current = 0;
         }
 
-        return updated;
-      });
+        // Commit the wave snapshot to React state only when something the
+        // renderer reads actually changed. peakTimer ticks every frame while
+        // any wave is at peak but is simulation-only — skipping those commits
+        // is what stops the grid from re-rendering 60x/sec.
+        wavesRef.current = updated;
+        const renderChanged =
+          wavesRenderDirtyRef.current ||
+          updated.length !== prev.length ||
+          updated.some((w, i) => {
+            const p = prev[i];
+            return (
+              w.id !== p.id ||
+              w.row !== p.row ||
+              w.phase !== p.phase ||
+              w.touched !== p.touched ||
+              w.magnetAffected !== p.magnetAffected ||
+              w.maxReach !== p.maxReach
+            );
+          });
+        if (renderChanged) {
+          wavesRenderDirtyRef.current = false;
+          setWaves(updated);
+        }
+      }
 
       if (shouldMoveWaves) {
         // Keep the remainder instead of resetting to 0 — resetting discarded up
@@ -1853,140 +1909,31 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       });
 
       // Ghost toe duration and cooldown
-      setGhostToe((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setGhostToe((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Super tap - duration-based for roguelike, cooldown-only for classic (uses tracked separately)
-      setSuperTap((prev) => {
-        // Handle duration-based super tap (roguelike mode)
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setSuperTap((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Crystal ball duration and cooldown (roguelike only)
-      setCrystalBall((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setCrystalBall((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Slowdown duration and cooldown (roguelike only)
-      setSlowdown((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setSlowdown((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Wave Magnet duration and cooldown (roguelike only)
-      setWaveMagnet((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setWaveMagnet((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Wave Surfer duration and cooldown (roguelike only)
-      setWaveSurfer((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setWaveSurfer((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Towel Off duration and cooldown (roguelike only)
-      setTowelOff((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setTowelOff((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Double Dip duration and cooldown (roguelike only)
-      setDoubleDip((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setDoubleDip((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Jump Around duration and cooldown (roguelike only)
-      setJumpAround((prev) => {
-        if (prev.active && prev.durationRemaining !== undefined) {
-          const newDuration = prev.durationRemaining - deltaTime;
-          if (newDuration <= 0) {
-            return { active: false, cooldownRemaining: dynamicCooldown, durationRemaining: 0 };
-          }
-          return { ...prev, durationRemaining: newDuration };
-        }
-        if (prev.cooldownRemaining > 0) {
-          return { ...prev, cooldownRemaining: Math.max(0, prev.cooldownRemaining - deltaTime) };
-        }
-        return prev;
-      });
+      setJumpAround((prev) => tickAbilityState(prev, deltaTime, dynamicCooldown));
 
       // Flashlight duration and cooldown (Nighttime boss beach)
       if (currentBeachEffectRef.current === "nighttime") {
@@ -2010,6 +1957,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         });
       }
 
+      // Commit the water timer to React state only when the displayed value
+      // (0.1s precision) changes — the ref drains at full precision every
+      // frame, but the HUD doesn't need a re-render for sub-0.1s deltas.
+      if (Math.floor(waterTimerRef.current / 100) !== Math.floor(committedWaterTimerRef.current / 100)) {
+        committedWaterTimerRef.current = waterTimerRef.current;
+        setWaterTimer(waterTimerRef.current);
+      }
+
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     };
 
@@ -2019,7 +1974,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       // First wave always peaks in rows 32-34 (gives player time to react)
       const maxReach = OCEAN_HEIGHT + 2 + Math.floor(Math.random() * 3); // 32, 33, or 34
       lastMaxReachRef.current = maxReach;
-      setWaves([{
+      commitWaves([{
         id: waveIdRef.current++,
         row: startRow,
         startRow,
@@ -2555,11 +2510,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     setGameState("playing");
     setFeetPosition(35);
-    setWaves([]);
-    setWaterTimer(timer);
+    commitWaves([]);
+    commitWaterTimer(timer);
     levelStartingWaterTimerRef.current = timer; // Store for Towel Off cap
-    setWavesTouched(0);
-    setWavesMissed(0);
+    commitWavesTouched(0);
+    commitWavesMissed(0);
     setInvincible({ active: false, cooldownRemaining: 0, durationRemaining: 0 });
     setSuperTap({ active: false, cooldownRemaining: 0, usesRemaining: SUPER_TAP_USES });
     setGhostToe({ active: false, cooldownRemaining: 0, durationRemaining: 0 });
@@ -3456,10 +3411,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const startGame = () => {
     setGameState("playing");
     setFeetPosition(35);
-    setWaves([]);
-    setWaterTimer(5000);
-    setWavesTouched(0);
-    setWavesMissed(0);
+    commitWaves([]);
+    commitWaterTimer(5000);
+    commitWavesTouched(0);
+    commitWavesMissed(0);
     setGameOverReason(null);
     waveIdRef.current = 0;
     setIsTapping(false);
@@ -3646,11 +3601,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     setShowBossBeachPopup(true);
     setGameState("playing");
     setFeetPosition(35);
-    setWaves([]);
-    setWaterTimer(bossQuickRunCarryoverTimer);
+    commitWaves([]);
+    commitWaterTimer(bossQuickRunCarryoverTimer);
     levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimer;
-    setWavesTouched(0);
-    setWavesMissed(0);
+    commitWavesTouched(0);
+    commitWavesMissed(0);
     // Fixed denominator - game over handled by checking total misses against MAX
     const maxMissesForRun = runType === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES;
     setRoguelikeWavesToLose(maxMissesForRun - bossQuickRunTotalMisses);
@@ -3710,11 +3665,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       setShowBossBeachPopup(true);
       setGameState("playing");
       setFeetPosition(35);
-      setWaves([]);
-      setWaterTimer(bossQuickRunCarryoverTimerRef.current);
+      commitWaves([]);
+      commitWaterTimer(bossQuickRunCarryoverTimerRef.current);
       levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimerRef.current;
-      setWavesTouched(0);
-      setWavesMissed(0);
+      commitWavesTouched(0);
+      commitWavesMissed(0);
       setRoguelikeWavesToWin(BOSS_QUICK_RUN_WAVES_TO_WIN);
       // Remaining misses = MAX - total accumulated so far
       const maxMissesForRun = runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES;
@@ -5015,11 +4970,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             // Start level with water timer from carryover
             setGameState("playing");
             setFeetPosition(35);
-            setWaves([]);
-            setWaterTimer(bossQuickRunCarryoverTimerRef.current);
+            commitWaves([]);
+            commitWaterTimer(bossQuickRunCarryoverTimerRef.current);
             levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimerRef.current;
-            setWavesTouched(0);
-            setWavesMissed(0);
+            commitWavesTouched(0);
+            commitWavesMissed(0);
             setGameOverReason(null);
             lastTimeRef.current = 0;
             waveSpawnTimerRef.current = 0;
