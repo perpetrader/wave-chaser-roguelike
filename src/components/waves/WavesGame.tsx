@@ -36,316 +36,39 @@ import {
 
 type GameState = "menu" | "roguelikeMenu" | "confirmLoadout" | "selectAbilities" | "playing" | "gameOver" | "levelComplete" | "roguelikeGameOver" | "selectBeach" | "slayMenu" | "slayMap" | "slayShop" | "slayRest" | "slayEvent" | "slayCardReward" | "slayBeachPreview" | "slayActComplete" | "slayVictory" | "bossQuickRunDraft" | "bossQuickRunLevelComplete" | "bossQuickRunVictory";
 type GameOverReason = "timer" | "missed" | null;
-export type MovementMode = "standard" | "slowerForward" | "momentum";
-export type RunType = "roguelike" | "beachBonanza" | "slayTheWaves" | "bossQuickRun" | "bossHellRun";
 
-// Foot Type modifiers
-const FOOT_TYPE_MODIFIERS: Record<FootType, { speedMultiplier: number; drainMultiplier: number }> = {
-  tourist: { speedMultiplier: 1.0, drainMultiplier: 1.0 },
-  beachBum: { speedMultiplier: 0.65, drainMultiplier: 0.6 },
-  speedster: { speedMultiplier: 1.4, drainMultiplier: 1.5 },
-  toeWarrior: { speedMultiplier: 1.0, drainMultiplier: 1.4 }, // Drain only applies when back 65% is in water
-};
+// Re-export for existing importers (RoguelikeStartScreen, slayTheWaves/*)
+export type { MovementMode, RunType } from "./game/constants";
 
-// Beach Effect types for boss levels (every 5th level)
-type BeachEffectType = "quicksand" | "spikeWaves" | "gummyBeach" | "coldWater" | "crazyWaves" | "fishNet" | "nighttime" | "roughWaters" | "heavySand" | "busyBeach";
-
-const BEACH_EFFECTS: { type: BeachEffectType; name: string; description: string }[] = [
-  { type: "quicksand", name: "Quicksand", description: "Stay still 0.2s triggers 80% slower movement for 1.5s!" },
-  { type: "spikeWaves", name: "Spike Waves", description: "100% of time in spikes is drained!" },
-  { type: "gummyBeach", name: "Gummy Beach", description: "20% slower, no toe tap at all!" },
-  { type: "coldWater", name: "Cold Water", description: "Water timer drains 2x faster!" },
-  { type: "crazyWaves", name: "Crazy Waves", description: "Wave variance is tripled!" },
-  { type: "fishNet", name: "Fish Net", description: "Feet get stuck every 3s for 1s!" },
-  { type: "nighttime", name: "Nighttime", description: "Flashlight only lasts 10s!" },
-  { type: "roughWaters", name: "Rough Waters", description: "Waves 75% faster, peak 50% shorter!" },
-  { type: "heavySand", name: "Heavy Sand", description: "Each tap moves 65% less!" },
-  { type: "busyBeach", name: "Busy Beach", description: "People spawn every 1.5 seconds!" },
-];
-
-// Flashlight settings for Nighttime boss beach
-const FLASHLIGHT_DURATION_BOSS = 10000; // 10 seconds (boss level)
-const FLASHLIGHT_DURATION_REDUCED = 25000; // 25 seconds (reduced mode)
-const FLASHLIGHT_COOLDOWN = 5000; // 5 seconds
-const FLASHLIGHT_ROWS_BOSS = 5; // Boss: 5 rows toward shore
-const FLASHLIGHT_ROWS_REDUCED = 7; // Levels 1-4: 7 rows toward shore
-
-const SAVED_RUN_KEY = "waveChaser_savedRun";
-const SAVED_BONANZA_RUN_KEY = "waveChaser_savedBonanzaRun";
-
-// PermanentUpgradeType and PermanentUpgrades imported from RoguelikeAbilitySelect
-
-interface SavedRun {
-  roguelikeLevel: number;
-  unlockedAbilities: UnlockedAbility[];
-  roguelikeTotalWaves: number;
-  waterTimeBonus: number;
-  wavesMissedBonus: number;
-  lastWavesMissedUpgradeLevel: number; // Track grace period for waves missed decreases
-  selectedAbilities: AbilityType[];
-  usedBeachEffects: BeachEffectType[];
-  currentBeachEffect: BeachEffectType | null;
-  pendingBeachEffect: BeachEffectType | null; // Pre-determined effect for next boss level
-  totalScore: number; // Total score accumulated during run
-  permanentUpgrades: PermanentUpgrades; // Permanent stat upgrades from boss beaches
-  excludedAbilities: AbilityType[]; // 3 abilities randomly excluded for this run
-  savedAt: number;
-  // Beach Bonanza specific fields (optional for backward compat)
-  runType?: RunType;
-  currentBeach?: BeachEffectType | null;
-  beachLevel?: number; // 1-5 within current beach
-  beachNumber?: number; // Which beach in the run (1, 2, 3...)
-  completedBeaches?: BeachEffectType[]; // All beaches completed in this run
-  autoToeTap?: boolean; // Toe tap mode preference
-  movementMode?: MovementMode; // Movement type preference
-  footType?: FootType; // Foot type (speed/drain modifiers) — must survive reload
-}
-
-// The 4 ability slots with their keyboard bindings
-const ABILITY_KEYS = ["C", "V", "B", "N"] as const;
-
-const OCEAN_WIDTH = 20;
-const OCEAN_HEIGHT = 30;
-const BEACH_HEIGHT = 13;
-const TOTAL_HEIGHT = OCEAN_HEIGHT + BEACH_HEIGHT; // 43
-
-const PIXEL_SIZE = 16; // Size of each pixel cell
-
-// Colors for pixel art
-const COLORS = {
-  ocean: "hsl(200, 70%, 35%)",
-  crest: "hsl(180, 90%, 85%)",
-  crestTouched: "hsl(160, 70%, 50%)", // Sea green when touched
-  sand: "hsl(42, 50%, 75%)",
-  feet: "hsl(25, 60%, 65%)",
-  feetOutline: "hsl(25, 50%, 45%)",
-  feetTouching: "hsl(180, 70%, 60%)",
-};
-
-// Base ability constants for standard modes
-const WETSUIT_DURATION = 8000; // 8 seconds total
-const WETSUIT_WATER_LIMIT = 2400; // Can take 2.4 seconds of water
-const WETSUIT_COOLDOWN = 60000;
-const SUPER_TAP_USES = 5;
-const SUPER_TAP_MULTIPLIER = 3;
-const SUPER_TAP_COOLDOWN = 60000;
-const GHOST_TOE_DURATION = 5000;
-const GHOST_TOE_COOLDOWN = 60000;
-const GHOST_TOE_EXTENSION = 2; // Full foot extension (matches foot height)
-
-// Roguelike base ability values (in ms)
-const ROGUELIKE_BASE_WETSUIT_DURATION = 8000; // 8 seconds base duration
-const ROGUELIKE_BASE_WETSUIT_WATER_LIMIT = 3000; // 3 seconds water tolerance
-const ROGUELIKE_BASE_SLOWDOWN_DURATION = 12000; // 12 seconds base for slowdown
-
-// Individual base durations (in ms)
-const ROGUELIKE_BASE_DURATIONS: Record<AbilityType, number> = {
-  wetsuit: 8000,     // 8s
-  slowdown: 12000,   // 12s
-  superTap: 7000,    // 7s
-  ghostToe: 6000,    // 6s
-  crystalBall: 5000, // 5s
-  waveMagnet: 5000,  // 5s
-  waveSurfer: 4000,  // 4s (Teleport)
-  towelOff: 7000,    // 7s
-  doubleDip: 5000,   // 5s
-  jumpAround: 6000,  // 6s
-};
-
-// Upgrade increments in ms
-const UPGRADE_INCREMENTS_MS: Record<AbilityType, number> = {
-  wetsuit: 800,    // +0.8s duration per upgrade
-  slowdown: 1200,  // +1.2s per upgrade
-  superTap: 700,   // +0.7s per upgrade
-  ghostToe: 600,   // +0.6s per upgrade
-  crystalBall: 500, // +0.5s per upgrade
-  waveMagnet: 500,  // +0.5s per upgrade
-  waveSurfer: 400,  // +0.4s per upgrade (Teleport)
-  towelOff: 700,    // +0.7s per upgrade
-  doubleDip: 500,   // +0.5s per upgrade
-  jumpAround: 600,  // +0.6s per upgrade
-};
-
-// Wetsuit water limit upgrade increment
-const WETSUIT_WATER_LIMIT_INCREMENT = 300; // +0.3s water tolerance per upgrade
-
-const CRYSTAL_BALL_COOLDOWN = 60000;
-const SLOWDOWN_COOLDOWN = 60000;
-const WAVE_MAGNET_COOLDOWN = 60000;
-const WAVE_SURFER_COOLDOWN = 60000;
-const TOWEL_OFF_COOLDOWN = 60000;
-const DOUBLE_DIP_COOLDOWN = 60000;
-const JUMP_AROUND_COOLDOWN = 60000;
-
-// Jump Around: movement multiplier when active
-const JUMP_AROUND_MULTIPLIER = 4;
-
-// Wave Magnet: no longer uses pull factor - now sets peak to player position
-
-// Difficulty settings
-interface DifficultySettings {
-  waveSpawnInterval: number; // ms
-  wavePeakDuration: number; // ms
-  waveSpeed: number; // ms per row
-  scaling?: {
-    everyNWaves: number;
-    multiplier: number; // reduction per threshold (e.g., 0.1 = 10% faster)
-  };
-}
-
-const DIFFICULTY_SETTINGS: Record<Exclude<WavesDifficulty, "roguelike">, DifficultySettings> = {
-  beginner: {
-    waveSpawnInterval: 5000,
-    wavePeakDuration: 3000,
-    waveSpeed: 500,
-  },
-  easy: {
-    waveSpawnInterval: 4000,
-    wavePeakDuration: 3000,
-    waveSpeed: 250,
-  },
-  medium: {
-    waveSpawnInterval: 3000,
-    wavePeakDuration: 2000,
-    waveSpeed: 250,
-  },
-  hard: {
-    waveSpawnInterval: 3000,
-    wavePeakDuration: 2000,
-    waveSpeed: 250,
-    scaling: {
-      everyNWaves: 5,
-      multiplier: 0.1, // 10% faster each threshold
-    },
-  },
-  expert: {
-    waveSpawnInterval: 2000,
-    wavePeakDuration: 1300,
-    waveSpeed: 250,
-    scaling: {
-      everyNWaves: 5,
-      multiplier: 0.2, // 20% faster each threshold
-    },
-  },
-};
-
-// Roguelike level 1 base settings
-const ROGUELIKE_BASE_SETTINGS: DifficultySettings = {
-  waveSpawnInterval: 4200,
-  wavePeakDuration: 2500,
-  waveSpeed: 250,
-};
-
-interface Wave {
-  id: number;
-  row: number; // Current row position (0-42)
-  startRow: number; // Starts in bottom 10 rows of ocean
-  maxReach: number; // Crest peak row (top 11 rows of beach)
-  phase: "incoming" | "peak" | "outgoing";
-  touched: boolean;
-  peakTimer: number; // Time spent at peak (in ms)
-  magnetAffected?: boolean; // True if wave magnet changed this wave's peak
-}
-
-interface AbilityState {
-  active: boolean;
-  cooldownRemaining: number;
-  usesRemaining?: number;
-  durationRemaining?: number;
-  waterExposure?: number; // For wetsuit: tracks time spent in water while active
-  waterLimit?: number; // For wetsuit: max time allowed in water
-}
-
-// Roguelike base water timer (5 seconds for level 1)
-const ROGUELIKE_BASE_WATER_TIMER = 5000;
-
-// Calculate roguelike settings for a given level
-const getRoguelikeLevelSettings = (level: number, lastUpgradeLevel: number = 0): { 
-  settings: DifficultySettings; 
-  wavesToWin: number; 
-  wavesToLose: number;
-  waterTimer: number;
-} => {
-  // 2% difficulty increase per level
-  const scalingFactor = Math.pow(0.98, level - 1);
-  
-  // Every 5 levels: +2 waves
-  const levelTier = Math.floor((level - 1) / 5);
-  // Starting at 4 waves, +2 per tier: 4, 6, 8, 10, 12...
-  const wavesToWin = 4 + (levelTier * 2);
-  
-  // Waves allowed decreases by 1 every 5 levels (can go negative, bonus is added later and total is clamped to min 1)
-  const wavesToLose = 7 - levelTier;
-  
-  // Water timer decreases by 3% each level (separate from speed/timing scaling)
-  const waterTimerScalingFactor = Math.pow(0.97, level - 1);
-  const waterTimer = Math.round(ROGUELIKE_BASE_WATER_TIMER * waterTimerScalingFactor);
-  
-  return {
-    settings: {
-      waveSpawnInterval: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpawnInterval * scalingFactor),
-      wavePeakDuration: Math.round(ROGUELIKE_BASE_SETTINGS.wavePeakDuration * scalingFactor),
-      waveSpeed: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpeed * scalingFactor),
-    },
-    wavesToWin,
-    wavesToLose,
-    waterTimer,
-  };
-};
-
-// ─── Slay the Waves difficulty settings ────────────────────────────────────
-// Separate from standard roguelike progression. Scales by act (1-3) and node type.
-const getSlayBattleSettings = (
-  actNumber: number,
-  nodeType: "beach" | "elite" | "boss",
-  waterTimeBonus: number = 0,
-  wavesMissedBonus: number = 0,
-): {
-  settings: DifficultySettings;
-  wavesToWin: number;
-  wavesToLose: number;
-  waterTimer: number;
-  beachEffectLevel: number; // 1-5 intensity for the beach effect
-} => {
-  // Act scaling: 10% harder per act (act 1 = 1.0, act 2 = 0.90, act 3 = 0.81)
-  const actScaling = Math.pow(0.90, actNumber - 1);
-
-  // Node type modifiers
-  const nodeModifiers = {
-    beach: { speedMult: 1.0, timerBase: 6000, effectLevel: 3 },
-    elite: { speedMult: 0.85, timerBase: 5000, effectLevel: 5 },
-    boss:  { speedMult: 0.75, timerBase: 4000, effectLevel: 5 },
-  };
-
-  const mod = nodeModifiers[nodeType];
-  const combinedScaling = actScaling * mod.speedMult;
-
-  // Waves to win: beach = 4 + (act*2), elite = 5 + (act*3), boss = 6 + (act*4)
-  const wavesToWin = nodeType === "beach"
-    ? 4 + (actNumber * 2)
-    : nodeType === "elite"
-    ? 5 + (actNumber * 3)
-    : 6 + (actNumber * 4);
-
-  // Waves missed to lose: beach = 6-act, elite = 5-act, boss = 4-act (min 1)
-  const wavesToLose = nodeType === "beach"
-    ? Math.max(1, (6 - actNumber) + wavesMissedBonus)
-    : nodeType === "elite"
-    ? Math.max(1, (5 - actNumber) + wavesMissedBonus)
-    : Math.max(1, (4 - actNumber) + wavesMissedBonus);
-
-  return {
-    settings: {
-      waveSpawnInterval: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpawnInterval * combinedScaling),
-      wavePeakDuration: Math.round(ROGUELIKE_BASE_SETTINGS.wavePeakDuration * combinedScaling),
-      waveSpeed: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpeed * combinedScaling),
-    },
-    wavesToWin,
-    wavesToLose,
-    waterTimer: Math.round(mod.timerBase * actScaling) + waterTimeBonus,
-    beachEffectLevel: mod.effectLevel,
-  };
-};
+import {
+  FOOT_TYPE_MODIFIERS, BEACH_EFFECTS, type BeachEffectType,
+  FLASHLIGHT_DURATION_BOSS, FLASHLIGHT_DURATION_REDUCED, FLASHLIGHT_COOLDOWN,
+  FLASHLIGHT_ROWS_BOSS, FLASHLIGHT_ROWS_REDUCED,
+  SAVED_RUN_KEY, SAVED_BONANZA_RUN_KEY, SLAY_SAVED_RUN_KEY,
+  BOSS_QUICK_RUN_HIGH_SCORE_KEY, BOSS_HELL_RUN_HIGH_SCORE_KEY,
+  type SavedRun, ABILITY_KEYS,
+  OCEAN_WIDTH, OCEAN_HEIGHT, BEACH_HEIGHT, TOTAL_HEIGHT, PIXEL_SIZE, COLORS,
+  WETSUIT_DURATION, WETSUIT_WATER_LIMIT, WETSUIT_COOLDOWN,
+  SUPER_TAP_USES, SUPER_TAP_MULTIPLIER, SUPER_TAP_COOLDOWN,
+  GHOST_TOE_DURATION, GHOST_TOE_COOLDOWN, GHOST_TOE_EXTENSION,
+  ROGUELIKE_BASE_WETSUIT_DURATION, ROGUELIKE_BASE_WETSUIT_WATER_LIMIT, ROGUELIKE_BASE_SLOWDOWN_DURATION,
+  ROGUELIKE_BASE_DURATIONS, UPGRADE_INCREMENTS_MS, WETSUIT_WATER_LIMIT_INCREMENT,
+  CRYSTAL_BALL_COOLDOWN, SLOWDOWN_COOLDOWN, WAVE_MAGNET_COOLDOWN, WAVE_SURFER_COOLDOWN,
+  TOWEL_OFF_COOLDOWN, DOUBLE_DIP_COOLDOWN, JUMP_AROUND_COOLDOWN, JUMP_AROUND_MULTIPLIER,
+  type DifficultySettings, DIFFICULTY_SETTINGS, ROGUELIKE_BASE_SETTINGS,
+  type Wave, type AbilityState, ROGUELIKE_BASE_WATER_TIMER,
+  getRoguelikeLevelSettings, getSlayBattleSettings,
+  BOSS_QUICK_RUN_COOLDOWN, BOSS_QUICK_RUN_STARTING_WATER_TIME, BOSS_QUICK_RUN_MAX_MISSES,
+  BOSS_QUICK_RUN_ABILITY_UPGRADES, BOSS_QUICK_RUN_WAVES_TO_WIN, BOSS_QUICK_RUN_TOTAL_LEVELS,
+  BOSS_QUICK_RUN_BASE_WATER_TIME, BOSS_HELL_RUN_STARTING_WATER_TIME, BOSS_HELL_RUN_MAX_MISSES,
+  BOSS_HELL_RUN_BASE_VARIANCE, BOSS_QUICK_RUN_SETTINGS,
+  type MovementMode, type RunType,
+} from "./game/constants";
+import {
+  quicksandPenaltyMultiplier,
+  heavySandPenaltyMultiplier,
+  gummyToeExtensionMultiplier,
+} from "./game/beachEffectScaling";
 
 interface WavesGameProps {
   startInRoguelike?: boolean;
@@ -481,7 +204,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const slayBattleSettingsRef = useRef<DifficultySettings | null>(null); // Slay-specific wave speed/timing for current battle
   const slayWaterTimerOverrideRef = useRef(0); // Slay-specific water timer (set before startLevel, consumed inside)
   const [slayHasSavedRun, setSlayHasSavedRun] = useState(false);
-  const SLAY_SAVED_RUN_KEY = "waveChaser_slayTheWavesSavedRun";
   
   // Boss Quick Run state
   const [bossQuickRunUsedBeaches, setBossQuickRunUsedBeaches] = useState<BeachEffectType[]>([]);
@@ -496,29 +218,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const [bossQuickRunIsNewHighScore, setBossQuickRunIsNewHighScore] = useState(false);
   const bossQuickRunCarryoverTimerRef = useRef(0);
   const bossQuickRunTotalMissesRef = useRef(0); // Accumulated total misses across all levels
-  const BOSS_QUICK_RUN_COOLDOWN = 20000; // 20 second cooldowns for Boss Quick Run
-  const BOSS_QUICK_RUN_STARTING_WATER_TIME = 50000; // Start with 50 seconds (no additions)
-  const BOSS_QUICK_RUN_MAX_MISSES = 20; // Fixed denominator for all levels
-  const BOSS_QUICK_RUN_ABILITY_UPGRADES = 2; // Level 3 power (2 upgrades)
-  const BOSS_QUICK_RUN_WAVES_TO_WIN = 15; // 15 waves needed per level
-  const BOSS_QUICK_RUN_TOTAL_LEVELS = 10;
-  const BOSS_QUICK_RUN_BASE_WATER_TIME = 50000; // Base time for Towel Off cap (50s)
-  const BOSS_QUICK_RUN_HIGH_SCORE_KEY = "waveChaser_bossQuickRunHighScore";
-  
-  // Boss Hell Run constants - harder version of Boss Quick Run
-  const BOSS_HELL_RUN_STARTING_WATER_TIME = 30000; // Start with 30 seconds
-  const BOSS_HELL_RUN_MAX_MISSES = 10; // Only 10 misses allowed
-  const BOSS_HELL_RUN_BASE_VARIANCE = 3; // Wave variance is 3 instead of 2
-  const BOSS_HELL_RUN_HIGH_SCORE_KEY = "waveChaser_bossHellRunHighScore";
-  
-  // Boss Quick Run uses level 20 settings from beach bonanza (2% scaling per level)
-  // Level 20: scalingFactor = Math.pow(0.98, 19) ≈ 0.68
-  const BOSS_QUICK_RUN_SETTINGS: DifficultySettings = {
-    waveSpawnInterval: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpawnInterval * Math.pow(0.98, 19)), // ~2856ms
-    wavePeakDuration: Math.round(ROGUELIKE_BASE_SETTINGS.wavePeakDuration * Math.pow(0.98, 19)), // ~1700ms
-    waveSpeed: Math.round(ROGUELIKE_BASE_SETTINGS.waveSpeed * Math.pow(0.98, 19)), // ~170ms
-  };
-  
+  // (Boss run constants live in ./game/constants)
+
   // Secret dev ability: next wave touched counts as 20
   const [superWaveActive, setSuperWaveActive] = useState(false);
   const superWaveActiveRef = useRef(false);
@@ -995,8 +696,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (currentBeachEffect === "gummyBeach") {
       const isReducedGummy = runType === "beachBonanza" && beachLevel < 5;
       if (isReducedGummy) {
-        const levelMultipliers = [0.60, 0.50, 0.40, 0.30];
-        baseToeExtension *= levelMultipliers[beachLevel - 1] || 0.30;
+        baseToeExtension *= gummyToeExtensionMultiplier(beachLevel);
       } else {
         baseToeExtension = 0; // Boss level: no toe tap
       }
@@ -1307,8 +1007,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           // Calculate what toe row would be if tapping (with super tap if active)
           let potentialToeExtension = 0.5 * tapDancerMult;
           if (isGummyBeachAutoTap) {
-            const levelMultipliers = [0.60, 0.50, 0.40, 0.30];
-            potentialToeExtension *= levelMultipliers[beachLevelRef.current - 1] || 0.30;
+            potentialToeExtension *= gummyToeExtensionMultiplier(beachLevelRef.current);
           }
           if (superTapRef.current.active) {
             potentialToeExtension *= SUPER_TAP_MULTIPLIER;
@@ -1340,8 +1039,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           const tapDancerMultRelease = 1 + (permanentUpgradesRef.current.tapDancer * 0.15);
           let currentToeExtension = 0.5 * tapDancerMultRelease;
           if (isGummyBeachRelease && hasLeveledBeachEffects() && beachLevelRef.current < 5) {
-            const levelMultipliers = [0.60, 0.50, 0.40, 0.30];
-            currentToeExtension *= levelMultipliers[beachLevelRef.current - 1] || 0.30;
+            currentToeExtension *= gummyToeExtensionMultiplier(beachLevelRef.current);
           }
           if (superTapRef.current.active) {
             currentToeExtension *= SUPER_TAP_MULTIPLIER;
@@ -1375,8 +1073,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             baseToeExtension = 0; // Boss level: no toe tap
           } else {
             // Reduced toe extension for non-boss gummy beach (60% → 30%)
-            const levelMultipliers = [0.60, 0.50, 0.40, 0.30];
-            baseToeExtension *= levelMultipliers[beachLevelRef.current - 1] || 0.30;
+            baseToeExtension *= gummyToeExtensionMultiplier(beachLevelRef.current);
           }
         }
         const toeExtension = superTapRef.current.active ? baseToeExtension * SUPER_TAP_MULTIPLIER : baseToeExtension;
@@ -2490,22 +2187,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     let moveStep = jumpAroundRef.current.active ? baseStep * JUMP_AROUND_MULTIPLIER : baseStep;
                   if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
                     // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-                    const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-                    const levelPenalties = [0.60, 0.50, 0.40, 0.30]; // 40%, 50%, 60%, 70% slower
-                    const penaltyMultiplier = isReducedQuicksand 
-                      ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
-                      : 0.20; // Boss = 80% slower
-                    moveStep *= penaltyMultiplier;
+                    moveStep *= quicksandPenaltyMultiplier(beachLevelRef.current, hasLeveledBeachEffects());
                   }
     if (currentBeachEffectRef.current === "heavySand") {
       // Heavy Sand: scales across levels 1-4 (10% → 20% → 30% → 40%), boss = 65%
-      const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-      let heavySandPenalty = 0.35; // Boss = 65% less
-      if (isReducedHeavySand) {
-        const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
-        heavySandPenalty = levelPenalties[beachLevelRef.current - 1] || 0.60;
-      }
-      moveStep *= heavySandPenalty;
+      moveStep *= heavySandPenaltyMultiplier(beachLevelRef.current, hasLeveledBeachEffects());
     }
     // Gummy Beach: 20% movement reduction at all levels
     if (currentBeachEffectRef.current === "gummyBeach") {
@@ -2549,22 +2235,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     let moveStep = jumpAroundRef.current.active ? baseStep * JUMP_AROUND_MULTIPLIER : baseStep;
     if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
       // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-      const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-      const levelPenalties = [0.60, 0.50, 0.40, 0.30]; // 40%, 50%, 60%, 70% slower
-      const penaltyMultiplier = isReducedQuicksand 
-        ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
-        : 0.20; // Boss = 80% slower
-      moveStep *= penaltyMultiplier;
+      moveStep *= quicksandPenaltyMultiplier(beachLevelRef.current, hasLeveledBeachEffects());
     }
     if (currentBeachEffectRef.current === "heavySand") {
       // Heavy Sand: scales across levels 1-4 (10% → 20% → 30% → 40%), boss = 65%
-      const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-      let heavySandPenalty = 0.35; // Boss = 65% less
-      if (isReducedHeavySand) {
-        const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
-        heavySandPenalty = levelPenalties[beachLevelRef.current - 1] || 0.60;
-      }
-      moveStep *= heavySandPenalty;
+      moveStep *= heavySandPenaltyMultiplier(beachLevelRef.current, hasLeveledBeachEffects());
     }
     // Gummy Beach: 20% movement reduction at all levels
     if (currentBeachEffectRef.current === "gummyBeach") {
@@ -2617,23 +2292,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
     // Apply beach effect penalties
     if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
-      // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-      const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-      const levelPenalties = [0.60, 0.50, 0.40, 0.30]; // 40%, 50%, 60%, 70% slower
-      const penaltyMultiplier = isReducedQuicksand 
-        ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
-        : 0.20; // Boss = 80% slower
-      moveThisFrame *= penaltyMultiplier;
+      moveThisFrame *= quicksandPenaltyMultiplier(beachLevelRef.current, hasLeveledBeachEffects());
     }
     if (currentBeachEffectRef.current === "heavySand") {
-      // Heavy Sand: scales across levels 1-4 (10% → 20% → 30% → 40%), boss = 65%
-      const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-      let heavySandPenalty = 0.35; // Boss = 65% less
-      if (isReducedHeavySand) {
-        const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
-        heavySandPenalty = levelPenalties[beachLevelRef.current - 1] || 0.60;
-      }
-      moveThisFrame *= heavySandPenalty;
+      moveThisFrame *= heavySandPenaltyMultiplier(beachLevelRef.current, hasLeveledBeachEffects());
     }
     // Gummy Beach: 20% movement reduction at all levels
     if (currentBeachEffectRef.current === "gummyBeach") {
@@ -4182,8 +3844,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         visualToeExtension = 0; // Boss level: no toe tap
       } else {
         // Reduced toe extension for non-boss gummy beach
-        const levelMultipliers = [0.60, 0.50, 0.40, 0.30];
-        visualToeExtension *= levelMultipliers[beachLevel - 1] || 0.30;
+        visualToeExtension *= gummyToeExtensionMultiplier(beachLevel);
       }
     }
     const toeExtension = superTap.active ? visualToeExtension * SUPER_TAP_MULTIPLIER : visualToeExtension;
