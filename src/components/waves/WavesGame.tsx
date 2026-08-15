@@ -82,6 +82,7 @@ import {
   gummyToeExtensionMultiplier,
 } from "./game/beachEffectScaling";
 import { tickAbilityState } from "./game/simulation";
+import { setSfxMuted, sfxTouch, sfxMiss, sfxLevelUp, sfxAbility, sfxGameOver } from "./game/sfx";
 
 interface WavesGameProps {
   startInRoguelike?: boolean;
@@ -295,6 +296,17 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     endRow: number;
     spawnTime: number;
   }>>([]);
+  // Juice: splash burst + floating score at the touch point, shake on miss,
+  // fading footprints on sand. Spawned from plain loop/handler code only.
+  const [touchBursts, setTouchBursts] = useState<Array<{ id: number; row: number; label: string }>>([]);
+  const touchBurstIdRef = useRef(0);
+  const [missShake, setMissShake] = useState(false);
+  const missShakeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Scale the fixed-size board down on short viewports (see the board wrapper)
+  const [boardScale, setBoardScale] = useState(1);
+  const [footprints, setFootprints] = useState<Array<{ id: number; row: number }>>([]);
+  const footprintIdRef = useRef(0);
+  const lastFootprintRowRef = useRef<number | null>(null);
   const [swappingSlot, setSwappingSlot] = useState<number | null>(null);
   const [showTimerTutorial, setShowTimerTutorial] = useState(false);
   const [showWavesTutorial, setShowWavesTutorial] = useState(false);
@@ -406,6 +418,37 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const commitWavesMissed = useCallback((n: number) => {
     wavesMissedRef.current = n;
     setWavesMissed(n);
+  }, []);
+
+  // Juice spawners — called from plain loop/handler code, never from updaters
+  const spawnTouchBurst = useCallback((row: number, label: string) => {
+    const id = touchBurstIdRef.current++;
+    setTouchBursts((prev) => [...prev.slice(-3), { id, row, label }]);
+    setTimeout(() => setTouchBursts((prev) => prev.filter((b) => b.id !== id)), 900);
+  }, []);
+
+  const triggerMissShake = useCallback(() => {
+    if (missShakeTimeoutRef.current) clearTimeout(missShakeTimeoutRef.current);
+    setMissShake(false);
+    // Re-trigger on the next frame so back-to-back misses restart the animation
+    requestAnimationFrame(() => setMissShake(true));
+    missShakeTimeoutRef.current = setTimeout(() => setMissShake(false), 550);
+  }, []);
+
+  // Drop a footprint roughly every stride (0.75 rows) of sand movement
+  const spawnFootprintIfNeeded = useCallback((newRow: number) => {
+    const last = lastFootprintRowRef.current;
+    if (last === null) {
+      lastFootprintRowRef.current = newRow;
+      return;
+    }
+    if (Math.abs(newRow - last) < 0.75) return;
+    lastFootprintRowRef.current = newRow;
+    // Only on dry sand (footprints in water make no sense)
+    if (last < OCEAN_HEIGHT + 1) return;
+    const id = footprintIdRef.current++;
+    setFootprints((prev) => [...prev.slice(-7), { id, row: last }]);
+    setTimeout(() => setFootprints((prev) => prev.filter((f) => f.id !== id)), 1500);
   }, []);
 
   useEffect(() => {
@@ -576,6 +619,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   // Handle mute state (persisted so a mute choice survives reloads)
   useEffect(() => {
     localStorage.setItem("waveChaser_muted", isMuted ? "1" : "0");
+    setSfxMuted(isMuted);
     if (audioRef.current) {
       audioRef.current.muted = isMuted;
     }
@@ -1210,13 +1254,18 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           const maxMissedForCheck = isBossRun
             ? (runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES)
             : maxMissed;
+          sfxMiss();
+          triggerMissShake();
           if (totalMissedForCheck >= maxMissedForCheck) {
+            sfxGameOver();
             setGameOverReason("missed");
             setGameState(isRoguelikeRef.current ? "roguelikeGameOver" : "gameOver");
           }
         }
 
         if (newTouches > 0) {
+          sfxTouch();
+          spawnTouchBurst(feetPositionRef.current, `+${newTouches}`);
           // Wave Surfer: teleport to next UNTOUCHED incoming wave when touching a wave
           if (waveSurferRef.current.active) {
             // Find all untouched incoming waves, prioritize by highest currentRow (closest to peaking)
@@ -1387,6 +1436,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               setTotalScore((prev) => prev + newLevelScore);
               
               // Start celebration overlay immediately
+              sfxLevelUp();
               setLevelCelebrating(true);
 
               // Delay transition to let player see the final wave touch (1 second payoff moment).
@@ -1630,6 +1680,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           const newTime = waterTimerRef.current - deltaTime * drainMultiplier * wetShoesMultiplier * spikeDrainMultiplier * footTypeDrainMultiplier;
           if (newTime <= 0) {
             waterTimerRef.current = 0;
+            sfxGameOver();
             setGameOverReason("timer");
             setGameState(isRoguelikeRef.current ? "roguelikeGameOver" : "gameOver");
           } else {
@@ -2001,6 +2052,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (invincible.active || invincible.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("wetsuit");
     const waterLimit = getWetsuitWaterLimit();
+    sfxAbility();
     setInvincible({ active: true, cooldownRemaining: 0, durationRemaining: duration, waterExposure: 0, waterLimit });
   }, [invincible, isAbilityUnlocked, getAbilityDuration, getWetsuitWaterLimit]);
 
@@ -2012,6 +2064,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       (!hasLeveledBeachEffects() || beachLevelRef.current >= 5);
     if (isGummyBoss) return;
     const value = getAbilityDuration("superTap");
+    sfxAbility();
     // In roguelike, super tap is duration-based; in classic it's uses-based
     if (isRoguelike) {
       setSuperTap({ active: true, cooldownRemaining: 0, durationRemaining: value, usesRemaining: undefined });
@@ -2024,6 +2077,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("ghostToe")) return;
     if (ghostToe.active || ghostToe.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("ghostToe");
+    sfxAbility();
     setGhostToe({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [ghostToe, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2031,6 +2085,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("crystalBall")) return;
     if (crystalBall.active || crystalBall.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("crystalBall");
+    sfxAbility();
     setCrystalBall({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [crystalBall, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2038,6 +2093,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("slowdown")) return;
     if (slowdown.active || slowdown.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("slowdown");
+    sfxAbility();
     setSlowdown({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [slowdown, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2045,6 +2101,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("waveMagnet")) return;
     if (waveMagnet.active || waveMagnet.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("waveMagnet");
+    sfxAbility();
     setWaveMagnet({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [waveMagnet, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2052,6 +2109,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("waveSurfer")) return;
     if (waveSurfer.active || waveSurfer.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("waveSurfer");
+    sfxAbility();
     setWaveSurfer({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [waveSurfer, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2059,6 +2117,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("towelOff")) return;
     if (towelOff.active || towelOff.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("towelOff");
+    sfxAbility();
     setTowelOff({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [towelOff, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2066,6 +2125,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("doubleDip")) return;
     if (doubleDip.active || doubleDip.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("doubleDip");
+    sfxAbility();
     setDoubleDip({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [doubleDip, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2073,6 +2133,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (!isAbilityUnlocked("jumpAround")) return;
     if (jumpAround.active || jumpAround.cooldownRemaining > 0) return;
     const duration = getAbilityDuration("jumpAround");
+    sfxAbility();
     setJumpAround({ active: true, cooldownRemaining: 0, durationRemaining: duration });
   }, [jumpAround, isAbilityUnlocked, getAbilityDuration]);
 
@@ -2080,6 +2141,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const activateFlashlight = useCallback(() => {
     if (currentBeachEffectRef.current !== "nighttime") return;
     if (flashlightActive || flashlightCooldown > 0) return;
+    sfxAbility();
     setFlashlightActive(true);
     // Nighttime: scales across levels 1-4 (30s → 25s → 20s → 15s), boss = 10s
     const isReducedNighttime = hasLeveledBeachEffects() && beachLevelRef.current < 5;
@@ -2177,7 +2239,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       }
       return newPos;
     });
-  }, [gameState, isRoguelike, isPositionBlockedByPerson]);
+    spawnFootprintIfNeeded(feetPositionRef.current - moveStep);
+  }, [gameState, isRoguelike, isPositionBlockedByPerson, spawnFootprintIfNeeded]);
 
   const doMoveDown = useCallback(() => {
     if (gameState !== "playing") return;
@@ -2221,7 +2284,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       }
       return newPos;
     });
-  }, [gameState, isRoguelike, isPositionBlockedByPerson]);
+    spawnFootprintIfNeeded(feetPositionRef.current + moveStep);
+  }, [gameState, isRoguelike, isPositionBlockedByPerson, spawnFootprintIfNeeded]);
 
   // Update position based on speed for momentum mode (called from game loop)
   const updateMomentumPosition = useCallback((deltaTimeMs: number) => {
@@ -2278,13 +2342,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         // Update ref immediately so the rest of the game loop uses the correct value
         feetPositionRef.current = newPos;
         setFeetPosition(newPos);
-        
+        spawnFootprintIfNeeded(newPos);
+
         if (Math.abs(moveThisFrame) > 0.01) {
           if (isRoguelikeRef.current) setTotalSteps((s) => s + 1);
         }
       }
     }
-  }, [isPositionBlockedByPerson, getGearSpeed]);
+  }, [isPositionBlockedByPerson, getGearSpeed, spawnFootprintIfNeeded]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -3408,6 +3473,18 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
   }, [startInRoguelike, gameState]);
 
+  // Fit the fixed 688px board into short viewports (~96px header/margin);
+  // without this the beach and feet clip off the bottom of e.g. 720p windows
+  useEffect(() => {
+    const updateScale = () => {
+      const available = window.innerHeight - 96;
+      setBoardScale(Math.min(1, available / (TOTAL_HEIGHT * PIXEL_SIZE)));
+    };
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
+
   const startGame = () => {
     setGameState("playing");
     setFeetPosition(35);
@@ -3785,7 +3862,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
   return (
     <div className="min-h-screen flex flex-col overflow-hidden bg-slate-900" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      {/* Header */}
+      {/* Header — hidden on screens that bring their own full-size title
+          (the Slay start screen's headline collided with it on mobile) */}
+      {gameState !== "slayMenu" && (
       <header className="relative z-20 p-4 flex items-center justify-between">
         {/* Back button - saves run if in roguelike mode during play */}
         {(isRoguelike && gameState === "playing") || (runType === "slayTheWaves" && gameState === "playing") ? (
@@ -3833,11 +3912,15 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </Button>
       </header>
+      )}
 
 
       {/* Pixel Art Game Grid */}
       <div className="flex-1 flex items-center justify-center">
-        <BeachFrame 
+        {/* Scale the board down on viewports shorter than the fixed 688px
+            board + chrome, so the beach/feet are never clipped off-screen */}
+        <div style={boardScale < 1 ? { transform: `scale(${boardScale})`, transformOrigin: "center top" } : undefined}>
+        <BeachFrame
           beachType={
             // Show frame for Beach Bonanza mode or Standard boss levels (level 5, 10, 15...)
             currentBeachEffect && (
@@ -3847,7 +3930,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           }
         >
           <div
-            className="relative border-4 border-slate-700 rounded-lg overflow-hidden shadow-2xl"
+            className={cn(
+              "relative border-4 border-slate-700 rounded-lg overflow-hidden shadow-2xl",
+              missShake && "animate-shake"
+            )}
             style={{
               width: OCEAN_WIDTH * PIXEL_SIZE,
               height: TOTAL_HEIGHT * PIXEL_SIZE,
@@ -3879,13 +3965,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           />
           {/* Ocean wave lines */}
           <OceanLines slowdownActive={slowdown.active} />
-          {/* Shoreline foam line */}
+          {/* Shoreline foam line (gentle breathing shimmer) */}
           <div
             className="absolute left-0 right-0 pointer-events-none"
             style={{
               top: (OCEAN_HEIGHT - 1) * PIXEL_SIZE + PIXEL_SIZE - 2,
               height: 3,
               background: "linear-gradient(to right, hsla(180, 80%, 85%, 0.0), hsla(180, 80%, 85%, 0.5) 20%, hsla(180, 80%, 85%, 0.5) 80%, hsla(180, 80%, 85%, 0.0))",
+              animation: "foamPulse 2.8s ease-in-out infinite alternate",
             }}
           />
           {/* Sand depth gradient */}
@@ -4633,6 +4720,41 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           {/* Wave Surfer teleport trail */}
           {gameState === "playing" && renderWaveSurferTrail()}
 
+          {/* Footprints fading on the sand */}
+          {footprints.map(f => (
+            <div key={f.id} className="absolute pointer-events-none" style={{ top: f.row * PIXEL_SIZE, left: (OCEAN_WIDTH / 2 - 1) * PIXEL_SIZE, zIndex: 5 }}>
+              <div className="absolute rounded-full" style={{ width: 10, height: 6, left: 2, backgroundColor: "hsla(35, 40%, 40%, 0.35)", animation: "footprintFade 1.4s ease-out forwards" }} />
+              <div className="absolute rounded-full" style={{ width: 10, height: 6, left: 20, top: 3, backgroundColor: "hsla(35, 40%, 40%, 0.35)", animation: "footprintFade 1.4s ease-out forwards" }} />
+            </div>
+          ))}
+
+          {/* Wave-touch splash + floating score */}
+          {touchBursts.map(b => (
+            <div key={b.id} className="absolute pointer-events-none" style={{ top: b.row * PIXEL_SIZE, left: OCEAN_WIDTH / 2 * PIXEL_SIZE, zIndex: 45 }}>
+              {[...Array(6)].map((_, i) => {
+                const angle = (i / 6) * Math.PI * 2 + 0.5;
+                return (
+                  <div
+                    key={i}
+                    className="absolute w-1.5 h-1.5 rounded-full"
+                    style={{
+                      backgroundColor: i % 2 ? "hsl(185, 90%, 78%)" : "hsl(160, 75%, 60%)",
+                      ["--dx" as never]: `${Math.round(Math.cos(angle) * 20)}px`,
+                      ["--dy" as never]: `${Math.round(Math.sin(angle) * 14) - 8}px`,
+                      animation: "splashParticle 0.55s ease-out forwards",
+                    }}
+                  />
+                );
+              })}
+              <div
+                className="absolute -translate-x-1/2 font-display text-base font-bold"
+                style={{ color: "hsl(160, 85%, 62%)", textShadow: "0 1px 3px rgba(0,0,0,0.7)", animation: "floatUpFade 0.9s ease-out forwards" }}
+              >
+                {b.label}
+              </div>
+            </div>
+          ))}
+
           {/* Water splash effect */}
           {gameState === "playing" && isTouching && (
             <div
@@ -4649,6 +4771,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           )}
         </div>
         </BeachFrame>
+        </div>
       </div>
 
       {/* Mobile Controls - positioned right below beach */}

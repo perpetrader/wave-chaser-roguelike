@@ -320,3 +320,57 @@
     transform: translateY(5px);
   }
 }
+
+/* ─── Juice: touch splash, floating score, footprints, ocean motion ───────── */
+
+@keyframes splashParticle {
+  from {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  to {
+    transform: translate(var(--dx), var(--dy));
+    opacity: 0;
+  }
+}
+
+@keyframes floatUpFade {
+  0% {
+    transform: translate(-50%, 0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -26px);
+    opacity: 0;
+  }
+}
+
+@keyframes footprintFade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes oceanDrift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-320px); /* one board width — second path copy takes over */
+  }
+}
+
+@keyframes foamPulse {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
