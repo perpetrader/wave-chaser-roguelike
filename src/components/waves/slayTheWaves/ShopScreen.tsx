@@ -58,12 +58,24 @@ const ShopScreen = ({
 }: ShopScreenProps) => {
   const [purchasedThisVisit, setPurchasedThisVisit] = useState<string[]>([]);
 
+  // Stock is frozen when the shop opens. Deriving it from live props made a
+  // purchased ability vanish from unlockedAbilities' complement, sliding the
+  // next unowned ability into the slot — a silent restock allowing unlimited
+  // buys per visit (and the "✓ purchased" state could never render).
+  const [abilityStock] = useState<AbilityType[]>(() => availableAbilities.slice(0, 3));
+  const [upgradeStock] = useState<AbilityType[]>(() =>
+    unlockedAbilities.filter(a => a.upgradeCount < 10).slice(0, 3).map(a => a.type)
+  );
+
   const handlePurchase = (id: string, action: () => void) => {
     action();
     setPurchasedThisVisit(prev => [...prev, id]);
   };
 
-  const upgradableAbilities = unlockedAbilities.filter(a => a.upgradeCount < 10);
+  // Look up live upgrade counts for display; stock membership stays frozen
+  const upgradableAbilities = upgradeStock
+    .map(type => unlockedAbilities.find(a => a.type === type))
+    .filter((a): a is UnlockedAbility => !!a);
 
   return (
     <div className="flex flex-col gap-3 overflow-y-auto" style={{ maxHeight: "calc(100dvh - 4rem)" }}>
@@ -79,9 +91,9 @@ const ShopScreen = ({
       {/* Shop sections */}
       <div className="space-y-3">
         {/* New Abilities */}
-        {availableAbilities.length > 0 && (
+        {abilityStock.length > 0 && (
           <Section title="New Abilities" icon={<Sparkles className="w-4 h-4" />} color="purple">
-            {availableAbilities.slice(0, 3).map(ability => (
+            {abilityStock.map(ability => (
               <ShopItem
                 key={ability}
                 icon={<span className="text-purple-400">{ABILITY_ICONS[ability]}</span>}
@@ -99,7 +111,7 @@ const ShopScreen = ({
         {/* Ability Upgrades */}
         {upgradableAbilities.length > 0 && (
           <Section title="Upgrades" icon={<TrendingUp className="w-4 h-4" />} color="cyan">
-            {upgradableAbilities.slice(0, 3).map(ability => (
+            {upgradableAbilities.map(ability => (
               <ShopItem
                 key={ability.type}
                 icon={<span className="text-cyan-400">{ABILITY_ICONS[ability.type]}</span>}

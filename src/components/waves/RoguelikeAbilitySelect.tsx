@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Shirt, Zap, Ghost, Plus, TrendingUp, Shell, Droplets, Snail, Magnet, Waves, Wind, Rabbit, Shield, Footprints, Timer, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -257,8 +258,6 @@ const RoguelikeAbilitySelect = ({
   levelScore,
   totalScore,
 }: RoguelikeAbilitySelectProps) => {
-  const unlockedTypes = unlockedAbilities.map((a) => a.type);
-  
   // New abilities can only be unlocked at levels 1, 3, 5, 7, 9, 12, 15, 18, 21, 24...
   const isUnlockLevel = (level <= 9 && level % 2 === 1) || (level >= 12 && (level - 12) % 3 === 0);
   
@@ -284,22 +283,31 @@ const RoguelikeAbilitySelect = ({
 
   
   // Get available pool based on level, filter out already unlocked and excluded abilities
-  // TIER_0 abilities are ALWAYS offered first (for testing), then fill remaining slots randomly
-  const availableToUnlock: AbilityType[] = (() => {
+  // TIER_0 abilities are ALWAYS offered first (for testing), then fill remaining slots randomly.
+  // Memoized so a parent re-render (e.g. the `disabled` transition flag flipping) can't
+  // reshuffle the offer under the player's finger mid-click.
+  const availableToUnlock: AbilityType[] = useMemo(() => {
     if (!isUnlockLevel || level > 20) return []; // Stop offering new abilities after level 20
-    
+
     // First, get any tier 0 abilities that aren't unlocked or excluded (always offered for testing)
-    const tier0Available = TIER_0_POOL.filter((t) => !unlockedTypes.includes(t) && !excludedAbilities.includes(t));
-    
+    const unlockedNow = unlockedAbilities.map((a) => a.type);
+    const tier0Available = TIER_0_POOL.filter((t) => !unlockedNow.includes(t) && !excludedAbilities.includes(t));
+
     // Then get the rest of the pool (already filters out excluded abilities)
     const pool = getAvailablePool(level, excludedAbilities);
-    const regularPool = pool.filter((t) => !unlockedTypes.includes(t) && !TIER_0_POOL.includes(t));
-    
+    const regularPool = pool.filter((t) => !unlockedNow.includes(t) && !TIER_0_POOL.includes(t));
+
     // Tier 0 always comes first, then fill remaining slots (up to 2 total) with random from regular pool
     const shuffled = shuffleArray(regularPool);
     const remaining = Math.max(0, 2 - tier0Available.length);
     return [...tier0Available, ...shuffled.slice(0, remaining)];
-  })();
+  }, [level, isUnlockLevel, unlockedAbilities, excludedAbilities]);
+
+  // Random pick of up to 3 upgradeable abilities — memoized for the same reason
+  const displayedUpgradeOptions = useMemo(
+    () => shuffleArray(unlockedAbilities.filter((ability) => ability.upgradeCount < MAX_UPGRADES)).slice(0, 3),
+    [level, unlockedAbilities]
+  );
 
   // Base durations in seconds - must match ROGUELIKE_BASE_DURATIONS in WavesGame.tsx
   const BASE_DURATIONS: Record<AbilityType, number> = {
@@ -570,13 +578,9 @@ const RoguelikeAbilitySelect = ({
 
       {/* Upgrade Existing Ability Section - Only shown after first unlock, NOT after boss beaches, NOT on unlock-only levels */}
       {!isFirstUnlock && !isPermanentUpgradeLevel && !isUnlockOnlyLevel && unlockedAbilities.length > 0 && (() => {
-        // Filter to upgradeable abilities, then randomly pick up to 3
-        const upgradeableAbilities = unlockedAbilities.filter((ability) => ability.upgradeCount < MAX_UPGRADES);
-        const shuffledUpgradeable = shuffleArray(upgradeableAbilities);
-        const displayedUpgradeOptions = shuffledUpgradeable.slice(0, 3);
-        
+        // displayedUpgradeOptions is memoized above so re-renders don't reshuffle it
         if (displayedUpgradeOptions.length === 0) return null;
-        
+
         return (
         <div className="w-full">
           <h3 className="text-lg font-display text-amber-400 mb-3 flex items-center gap-2">

@@ -98,6 +98,7 @@ interface SavedRun {
   completedBeaches?: BeachEffectType[]; // All beaches completed in this run
   autoToeTap?: boolean; // Toe tap mode preference
   movementMode?: MovementMode; // Movement type preference
+  footType?: FootType; // Foot type (speed/drain modifiers) — must survive reload
 }
 
 // The 4 ability slots with their keyboard bindings
@@ -636,6 +637,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const currentBeachEffectRef = useRef(currentBeachEffect);
   const fishNetStuckRef = useRef(fishNetStuck);
   const levelCelebratingRef = useRef(levelCelebrating);
+  const celebrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const levelStartingWaterTimerRef = useRef(0); // Track starting water timer for Towel Off cap
   const wasTouchingWaterRef = useRef(false); // Track previous water touching state for Jump Around immunity
@@ -1062,9 +1064,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     return () => clearTimeout(timeout);
   }, [waveSurferParticles]);
 
-  // Clear mobile movement intervals when not playing
+  // Clear mobile movement intervals when not playing (and on unmount —
+  // without the cleanup, unmounting mid-hold left the interval running forever)
   useEffect(() => {
-    if (gameState !== "playing") {
+    const clearMoveIntervals = () => {
       if (moveUpIntervalRef.current) {
         clearInterval(moveUpIntervalRef.current);
         moveUpIntervalRef.current = null;
@@ -1074,7 +1077,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         moveDownIntervalRef.current = null;
       }
       keyHeldRef.current = { up: false, down: false };
+    };
+    if (gameState !== "playing") {
+      clearMoveIntervals();
     }
+    return clearMoveIntervals;
   }, [gameState]);
   
   // Game loop with no external dependencies - reads from refs
@@ -1625,9 +1632,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               
               // Start celebration overlay immediately
               setLevelCelebrating(true);
-              
-              // Delay transition to let player see the final wave touch (1 second payoff moment)
-              setTimeout(() => {
+
+              // Delay transition to let player see the final wave touch (1 second payoff moment).
+              // Tracked in a ref so Pause & Save can cancel it — otherwise it fires after the
+              // save and forces the game state forward on top of the menu.
+              celebrationTimeoutRef.current = setTimeout(() => {
                 setLevelCelebrating(false);
                 // Beach Bonanza: handle beach level progression
                 if (runTypeRef.current === "beachBonanza") {
@@ -1746,11 +1755,13 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   setRoguelikeLevel(prev => prev + 1);
                   roguelikeLevelRef.current = roguelikeLevelRef.current + 1;
                   
-                  // Show card reward screen if abilities available, otherwise go to map
+                  // Show card reward screen if abilities available; otherwise
+                  // route through slayAfterCardReward so a boss kill still
+                  // advances the act / triggers victory when the pool is empty
                   if (availableForReward.length > 0) {
                     setGameState("slayCardReward");
                   } else {
-                    setGameState("slayMap");
+                    slayAfterCardReward();
                   }
                 } else {
                   // Standard roguelike: Preserve current beach effect for display
@@ -2680,9 +2691,12 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         }
       } else if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
+        // Ignore OS key auto-repeat: holding Space fired keydown ~30×/sec,
+        // inflating the toe-tap stat while the tap state never changed
+        if (e.repeat) return;
         // Gummy Beach effect: can't toe tap on boss level, reduced distance on non-boss
         // Auto toe tap mode: disable manual toe tapping
-        const isGummyBoss = currentBeachEffectRef.current === "gummyBeach" && 
+        const isGummyBoss = currentBeachEffectRef.current === "gummyBeach" &&
           (!hasLeveledBeachEffects() || beachLevelRef.current >= 5);
         if (!isGummyBoss && !autoToeTapRef.current) {
           setIsTapping(true);
@@ -2745,11 +2759,29 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     };
   }, [handleKeyDown, handleKeyUp]);
 
+  // Clear state left over from a previous mode (boss runs, Slay) so a new
+  // classic/standard game doesn't inherit miss totals, water-time bonuses,
+  // or per-battle setting overrides. Refs update immediately; the setState
+  // calls land next render, so callers starting a level in the same tick
+  // must pass explicit zeros to startLevel.
+  const resetModeState = () => {
+    setRunType("roguelike");
+    runTypeRef.current = "roguelike";
+    setWaterTimeBonus(0);
+    setWavesMissedBonus(0);
+    setBossQuickRunTotalMisses(0);
+    bossQuickRunTotalMissesRef.current = 0;
+    slayBattleSettingsRef.current = null;
+    slayWaterTimerOverrideRef.current = 0;
+  };
+
   const handleDifficultySelect = (selectedDifficulty: WavesDifficulty) => {
+    resetModeState();
     setIsRoguelike(false);
     setDifficulty(selectedDifficulty);
-    // Start game immediately after selecting difficulty
-    startLevel(undefined, false);
+    // Start game immediately after selecting difficulty (explicit zero
+    // bonuses — the resetModeState setState calls haven't landed yet)
+    startLevel(undefined, false, 0, undefined, 0);
   };
 
   const startLevel = (level?: number, forceRoguelike?: boolean, currentWaterTimeBonus?: number, preselectedAbilities?: AbilityType[], currentWavesMissedBonus?: number) => {
@@ -3230,6 +3262,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       setSlayMap(saved.map);
       setSlayGold(saved.gold);
       setSlayMaxWaterTime(saved.maxWaterTime);
+      // Older saves lack these — fall back to deriving from maxWaterTime so
+      // pre-fix saves keep their earned water time instead of losing it
+      setWaterTimeBonus(saved.waterTimeBonus ?? Math.max(0, saved.maxWaterTime - STARTING_MAX_WATER_TIME));
+      setWavesMissedBonus(saved.wavesMissedBonus ?? 0);
       setUnlockedAbilities(saved.unlockedAbilities);
       setSelectedAbilities(saved.selectedAbilities);
       setExcludedAbilities(saved.excludedAbilities);
@@ -3252,15 +3288,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     } catch (e) {
       console.error("Failed to load Slay the Waves run", e);
     }
-  };
-  
-  // Get available abilities for card rewards (not yet unlocked)
-  const getCardRewardAbilities = (): AbilityType[] => {
-    const unlocked = unlockedAbilities.map(a => a.type);
-    const available = ALL_ABILITIES.filter(a => !unlocked.includes(a) && !excludedAbilities.includes(a));
-    // Shuffle and pick 3
-    const shuffled = [...available].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 3);
   };
   
   // Handle selecting a node on the map
@@ -3304,56 +3331,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
   };
   
-  // Handle completing a beach/elite/boss level in Slay mode
-  const handleSlayLevelComplete = () => {
-    // Award gold based on node type
-    const goldEarned = slayPendingNodeType === "boss" ? GOLD_PER_BOSS : 
-                       slayPendingNodeType === "elite" ? GOLD_PER_ELITE : GOLD_PER_BEACH;
-    setSlayGold(prev => prev + goldEarned);
-    
-    // Get card reward abilities
-    const rewardAbilities = getCardRewardAbilities();
-    setSlayCardRewardAbilities(rewardAbilities);
-    
-    // Increment level
-    setRoguelikeLevel(prev => prev + 1);
-    
-    // Check if boss - advance act or victory
-    if (slayPendingNodeType === "boss" && slayMap) {
-      if (slayMap.actNumber >= TOTAL_ACTS) {
-        // Defeated Act 3 boss — Victory!
-        // Show card reward first, then victory after card select
-        if (rewardAbilities.length > 0) {
-          setSlayCardRewardAbilities(rewardAbilities);
-          setGameState("slayCardReward");
-        } else {
-          setGameState("slayVictory");
-        }
-        return;
-      } else {
-        // Advance to next act — show card reward, then act complete
-        if (rewardAbilities.length > 0) {
-          setSlayCardRewardAbilities(rewardAbilities);
-          setGameState("slayCardReward");
-        } else {
-          // Generate next act map immediately
-          const nextAct = slayMap.actNumber + 1;
-          setSlayMap(generateMap(nextAct));
-          setGameState("slayActComplete");
-        }
-        return;
-      }
-    }
-
-    // Show card reward screen if abilities available, otherwise go to map
-    if (rewardAbilities.length > 0) {
-      setGameState("slayCardReward");
-    } else {
-      setGameState("slayMap");
-    }
-  };
-  
-  // Navigate to next slay screen after card reward (handles act transitions)
+  // Navigate to next slay screen after card reward (handles act transitions).
+  // Also called directly from the in-loop level-complete path when the card
+  // pool is empty — this is the single owner of boss act-advance/victory logic.
   const slayAfterCardReward = () => {
     if (!slayMap) { setGameState("slayMap"); return; }
     // Was the last node a boss?
@@ -3458,12 +3438,24 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   
   // Event handler
   const handleSlayEventOption = (option: EventOption) => {
-    // Apply costs
-    if (option.costGold && slayGold >= option.costGold) {
+    // Water-time damage must also hit waterTimeBonus — battles compute their
+    // timer as timerBase + waterTimeBonus (slayMaxWaterTime is the displayed
+    // value). Mirror the actually-applied delta so the display floor (1000ms)
+    // can't make the two drift apart.
+    const applyWaterTimeDamage = (amount: number) => {
+      const applied = slayMaxWaterTime - Math.max(1000, slayMaxWaterTime - amount);
+      setSlayMaxWaterTime(prev => prev - applied);
+      setWaterTimeBonus(prev => prev - applied);
+    };
+
+    // Apply costs. Guard here, not just in the button's disabled state — an
+    // unaffordable option must not fall through and apply its effect for free.
+    if (option.costGold) {
+      if (slayGold < option.costGold) return;
       setSlayGold(prev => prev - option.costGold!);
     }
     if (option.costHealth) {
-      setSlayMaxWaterTime(prev => Math.max(1000, prev - option.costHealth!));
+      applyWaterTimeDamage(option.costHealth);
     }
     
     // Apply effects
@@ -3502,7 +3494,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         setWaterTimeBonus(prev => prev + effect.amount);
         break;
       case "damageWaterTime":
-        setSlayMaxWaterTime(prev => Math.max(1000, prev - effect.amount));
+        applyWaterTimeDamage(effect.amount);
         break;
       case "gainPermanentUpgrade":
         const upgrades: PermanentUpgradeType[] = ["fastFeet", "tapDancer", "wetShoes"];
@@ -3520,10 +3512,15 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   
   // Save Slay run
   const saveSlayRun = () => {
+    cancelCelebration();
     const savedRun = {
       map: slayMap,
       gold: slayGold,
       maxWaterTime: slayMaxWaterTime,
+      // Battles read these, not maxWaterTime — losing them on reload silently
+      // stripped all purchased/rested water time and miss bonuses
+      waterTimeBonus,
+      wavesMissedBonus,
       unlockedAbilities,
       selectedAbilities,
       excludedAbilities,
@@ -3603,14 +3600,23 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   }, [roguelikeLevel, isNextLevelBoss, pendingBeachEffect]);
 
   // Save current roguelike run to localStorage
+  // Cancel a pending level-celebration transition (used by both save paths)
+  const cancelCelebration = () => {
+    if (celebrationTimeoutRef.current) {
+      clearTimeout(celebrationTimeoutRef.current);
+      celebrationTimeoutRef.current = null;
+    }
+    setLevelCelebrating(false);
+  };
+
   const saveRoguelikeRun = () => {
-    // Save with level decremented so continuing starts at the beginning of current level
-    // (restores to end of previous level state)
-    const levelToSave = Math.max(1, roguelikeLevel - 1);
-    const beachLevelToSave = runType === "beachBonanza" ? Math.max(1, beachLevel - 1) : beachLevel;
-    
+    cancelCelebration();
+    // Save the CURRENT level. It used to save level - 1 and resume on the
+    // level-complete screen, which re-offered the upgrade that was already
+    // applied before saving — an infinitely repeatable free-upgrade exploit.
+    // Continuing now goes to the loadout confirm screen and replays this level.
     const savedRun: SavedRun = {
-      roguelikeLevel: levelToSave,
+      roguelikeLevel,
       unlockedAbilities,
       roguelikeTotalWaves,
       waterTimeBonus,
@@ -3627,11 +3633,12 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       // Beach Bonanza specific fields
       runType,
       currentBeach,
-      beachLevel: beachLevelToSave,
+      beachLevel,
       beachNumber,
       completedBeaches,
       autoToeTap,
       movementMode,
+      footType,
     };
     localStorage.setItem(SAVED_RUN_KEY, JSON.stringify(savedRun));
     setHasSavedRun(true);
@@ -3693,13 +3700,21 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       const restoredMovementMode = savedRun.movementMode || "standard";
       setMovementMode(restoredMovementMode);
       movementModeRef.current = restoredMovementMode;
-      
+
+      // Restore foot type (older saves lack it — keep whatever is selected)
+      if (savedRun.footType) {
+        setFootType(savedRun.footType);
+        footTypeRef.current = savedRun.footType;
+      }
+
       const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(savedRun.roguelikeLevel, savedRun.lastWavesMissedUpgradeLevel || 0);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(Math.max(1, wavesToLose + savedRun.wavesMissedBonus));
-      
-      // Return to level complete screen since that's where they paused
-      setGameState("levelComplete");
+
+      // Resume on the loadout confirm screen for the saved (current) level.
+      // Resuming on levelComplete re-offered an already-applied upgrade.
+      setSwappingSlot(null);
+      setGameState("confirmLoadout");
     } catch (e) {
       console.error("Failed to load saved run:", e);
       localStorage.removeItem(SAVED_RUN_KEY);
@@ -3775,6 +3790,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   };
 
   const goToMenu = () => {
+    resetModeState();
     setGameState("menu");
     setIsRoguelike(false);
   };
@@ -5386,47 +5402,16 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   doMoveUp(); // Shift gear toward shore
                   return;
                 }
-                
-                const moveUp = () => {
-                  if (fishNetStuckRef.current) return;
-                  const baseStep = 0.25;
-                  // Apply foot type speed modifier to tap-based movement
-                  const footTypeSpeedMult = FOOT_TYPE_MODIFIERS[footTypeRef.current].speedMultiplier;
-                  let moveStep = jumpAroundRef.current.active ? baseStep * JUMP_AROUND_MULTIPLIER : baseStep;
-                  moveStep *= footTypeSpeedMult;
-                  if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
-                    // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-                    const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-                    const levelPenalties = [0.60, 0.50, 0.40, 0.30];
-                    const penaltyMultiplier = isReducedQuicksand 
-                      ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
-                      : 0.20;
-                    moveStep *= penaltyMultiplier;
-                  }
-                  if (currentBeachEffectRef.current === "heavySand") {
-                    // Heavy Sand: Level 1 = 10%, Level 2 = 20%, Level 3 = 30%, Level 4 = 40%, Boss = 65%
-                    const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-                    const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
-                    const heavySandPenalty = isReducedHeavySand 
-                      ? (levelPenalties[beachLevelRef.current - 1] || 0.60)
-                      : 0.35; // Boss = 65% less
-                    moveStep *= heavySandPenalty;
-                  }
-                  setFeetPosition((prev) => {
-                    const newPos = Math.max(prev - moveStep, OCEAN_HEIGHT);
-                    if (isPositionBlockedByPerson(newPos)) return prev;
-                    if (newPos !== prev) {
-                      if (isRoguelike) setTotalSteps(s => s + 1);
-                    }
-                    return newPos;
-                  });
-                };
-                
+
+                // Use the shared movement function — the old inline copy of the
+                // math silently dropped the Fast Feet upgrade and the Gummy
+                // Beach penalty, so mobile and keyboard moved differently
+
                 // Move once immediately
-                moveUp();
-                
+                doMoveUp();
+
                 // Then continue moving while held (120ms delay to avoid double-tap on quick presses)
-                moveUpIntervalRef.current = setInterval(moveUp, 120);
+                moveUpIntervalRef.current = setInterval(doMoveUp, 120);
               }}
               onTouchEnd={() => {
                 // Momentum mode: no hold state to clear
@@ -5462,48 +5447,16 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   doMoveDown(); // Shift gear away from shore
                   return;
                 }
-                
-                const moveDown = () => {
-                  if (fishNetStuckRef.current) return;
-                  const baseStep = 0.25;
-                  // Apply foot type speed modifier to tap-based movement
-                  const footTypeSpeedMult = FOOT_TYPE_MODIFIERS[footTypeRef.current].speedMultiplier;
-                  const bossQuickRunSpeedMult = runTypeRef.current === "bossQuickRun" ? 1.5 : 1;
-                  let moveStep = jumpAroundRef.current.active ? baseStep * JUMP_AROUND_MULTIPLIER : baseStep;
-                  moveStep *= footTypeSpeedMult * bossQuickRunSpeedMult;
-                  if (currentBeachEffectRef.current === "quicksand" && quicksandPenaltyActiveRef.current) {
-                    // Quicksand penalty: Level 1 = 40%, Level 2 = 50%, Level 3 = 60%, Level 4 = 70%, Boss = 80%
-                    const isReducedQuicksand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-                    const levelPenalties = [0.60, 0.50, 0.40, 0.30];
-                    const penaltyMultiplier = isReducedQuicksand 
-                      ? (levelPenalties[beachLevelRef.current - 1] || 0.30)
-                      : 0.20;
-                    moveStep *= penaltyMultiplier;
-                  }
-                  if (currentBeachEffectRef.current === "heavySand") {
-                    // Heavy Sand: Level 1 = 10%, Level 2 = 20%, Level 3 = 30%, Level 4 = 40%, Boss = 65%
-                    const isReducedHeavySand = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-                    const levelPenalties = [0.90, 0.80, 0.70, 0.60]; // 10%, 20%, 30%, 40% less
-                    const heavySandPenalty = isReducedHeavySand 
-                      ? (levelPenalties[beachLevelRef.current - 1] || 0.60)
-                      : 0.35; // Boss = 65% less
-                    moveStep *= heavySandPenalty;
-                  }
-                  setFeetPosition((prev) => {
-                    const newPos = Math.min(prev + moveStep, TOTAL_HEIGHT - 1);
-                    if (isPositionBlockedByPerson(newPos)) return prev;
-                    if (newPos !== prev) {
-                      if (isRoguelike) setTotalSteps(s => s + 1);
-                    }
-                    return newPos;
-                  });
-                };
-                
+
+                // Use the shared movement function — the old inline copy dropped
+                // Fast Feet and Gummy Beach, and applied a 1.5× boss-run speed
+                // multiplier to move-down only (nowhere else in the game)
+
                 // Move once immediately
-                moveDown();
-                
+                doMoveDown();
+
                 // Then continue moving while held (120ms delay to avoid double-tap on quick presses)
-                moveDownIntervalRef.current = setInterval(moveDown, 120);
+                moveDownIntervalRef.current = setInterval(doMoveDown, 120);
               }}
               onTouchEnd={() => {
                 // Momentum mode: no hold state to clear
@@ -6446,8 +6399,16 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   // Keep totalScore intact - just reset level score (failed level gives no points)
                   setLevelScore(0);
                   
-                  // Boss Quick Run: use custom retry logic with correct settings
-                  if (runType === "bossQuickRun") {
+                  // Slay the Waves: re-fight the current node with Slay battle
+                  // settings (falling through would use standard-roguelike
+                  // waves/timer formulas — a different, easier battle)
+                  if (runType === "slayTheWaves") {
+                    handleSlayStartBattle();
+                    return;
+                  }
+
+                  // Boss Quick Run / Boss Hell Run: custom retry with carryover values
+                  if (runType === "bossQuickRun" || runType === "bossHellRun") {
                     // Reset abilities cooldowns
                     const defaultAbilityState: AbilityState = { active: false, cooldownRemaining: 0, durationRemaining: 0 };
                     setInvincible({ ...defaultAbilityState, waterExposure: 0, waterLimit: getWetsuitWaterLimit() });
@@ -6489,7 +6450,18 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 Retry Level
               </Button>
               <Button
-                onClick={() => startRoguelikeRun(movementMode)}
+                onClick={() => {
+                  // Restart the mode you died in, keeping control preferences
+                  // (the old bare startRoguelikeRun(movementMode) call reset
+                  // everyone to a standard run with tourist feet + manual tap)
+                  if (runType === "slayTheWaves") {
+                    setGameState("slayMenu");
+                    return;
+                  }
+                  const restartType: StartScreenRunType =
+                    runType === "roguelike" ? "standard" : runType;
+                  startRoguelikeRun(movementMode, restartType, footType, autoToeTap ? "auto" : "manual");
+                }}
                 className="bg-purple-600 hover:bg-purple-500 text-white font-display px-6 py-4"
                 disabled={!gameOverReady}
               >
