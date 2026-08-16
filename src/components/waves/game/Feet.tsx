@@ -88,6 +88,28 @@ const Feet = React.memo(function Feet({
     return COLORS.feet;
   };
 
+  // Idle weight-shift: the feet bob gently in counter-phase while standing.
+  // Purely visual (applied to the inner sprite, never the positioned wrapper)
+  // and suppressed while tapping/stuck so gameplay states stay readable.
+  const idleAnimated = !isTapping && !fishNetStuck && !(currentBeachEffect === "quicksand" && quicksandPenaltyActive);
+
+  // Toe bumps + heel shading give the plain rectangles foot anatomy. Drawn
+  // as translucent overlays so every ability color scheme keeps working.
+  const footAnatomy = (
+    <>
+      {/* Three toe bumps along the top edge */}
+      <div className="absolute pointer-events-none" style={{ top: -1, left: 1, right: 1, height: 4, display: "flex", gap: 1, justifyContent: "center" }}>
+        {[4, 3, 3].map((toeW, i) => (
+          <div key={i} style={{ width: toeW, height: 4 - i * 0.5, borderRadius: "45% 45% 30% 30%", backgroundColor: "hsla(0, 0%, 0%, 0.18)" }} />
+        ))}
+      </div>
+      {/* Inner-edge highlight for volume */}
+      <div className="absolute pointer-events-none" style={{ top: 3, bottom: 3, left: 1, width: 2, borderRadius: 2, backgroundColor: "hsla(0, 0%, 100%, 0.14)" }} />
+      {/* Heel shadow */}
+      <div className="absolute pointer-events-none" style={{ bottom: 0, left: 2, right: 2, height: 3, borderRadius: "0 0 3px 3px", backgroundColor: "hsla(0, 0%, 0%, 0.14)" }} />
+    </>
+  );
+
   // Teleport uses a special striped gradient - handled separately in style
   const getTeleportGradient = () =>
     "repeating-linear-gradient(45deg, hsl(174, 70%, 50%), hsl(174, 70%, 50%) 4px, hsl(280, 60%, 35%) 4px, hsl(280, 60%, 35%) 8px)";
@@ -122,7 +144,7 @@ const Feet = React.memo(function Feet({
       }}
     >
       {/* Left foot with ghost feet extension */}
-      <div className="flex flex-col">
+      <div className="flex flex-col" style={idleAnimated ? { animation: "footIdle 1.6s ease-in-out infinite" } : undefined}>
         {/* Ghost feet extension - full ghost foot */}
         {ghostToeActive && (
           <div
@@ -145,22 +167,16 @@ const Feet = React.memo(function Feet({
           style={{
             width: PIXEL_SIZE,
             height: footHeight,
-            backgroundColor: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? undefined : getFeetColor(),
-            background: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? getTeleportGradient() : undefined,
+            // Single 'background' property — toggling between backgroundColor
+            // and the background shorthand across renders triggers a React
+            // conflicting-style warning (and can mis-style during rerenders)
+            background: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? getTeleportGradient() : getFeetColor(),
             border: `2px solid ${jumpAroundActive ? "hsl(84, 60%, 35%)" : (waveSurferActive || hasTeleportImmunity) ? "hsl(280, 50%, 40%)" : superTapActive ? "hsl(45, 100%, 40%)" : COLORS.feetOutline}`,
             boxShadow: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? "0 0 12px hsl(280, 60%, 50%), 0 0 24px hsl(174, 70%, 40%)" : undefined,
             borderRadius: ghostToeActive ? "0 0 4px 4px" : "4px",
           }}
         >
-          {/* Toe detail line */}
-          <div style={{
-            position: "absolute",
-            top: 2,
-            left: "50%",
-            width: 1,
-            height: footHeight * 0.3,
-            backgroundColor: "hsla(0, 0%, 0%, 0.15)",
-          }} />
+          {footAnatomy}
           {/* Toe Warrior immunity line - dotted line at 35% from top */}
           {footType === "toeWarrior" && (
             <div
@@ -175,8 +191,8 @@ const Feet = React.memo(function Feet({
           )}
         </div>
       </div>
-      {/* Right foot with ghost feet extension */}
-      <div className="flex flex-col">
+      {/* Right foot with ghost feet extension (counter-phase idle bob) */}
+      <div className="flex flex-col" style={idleAnimated ? { animation: "footIdle 1.6s ease-in-out infinite", animationDelay: "-0.8s" } : undefined}>
         {/* Ghost feet extension - full ghost foot */}
         {ghostToeActive && (
           <div
@@ -199,22 +215,16 @@ const Feet = React.memo(function Feet({
           style={{
             width: PIXEL_SIZE,
             height: footHeight,
-            backgroundColor: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? undefined : getFeetColor(),
-            background: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? getTeleportGradient() : undefined,
+            // Single 'background' property — toggling between backgroundColor
+            // and the background shorthand across renders triggers a React
+            // conflicting-style warning (and can mis-style during rerenders)
+            background: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? getTeleportGradient() : getFeetColor(),
             border: `2px solid ${jumpAroundActive ? "hsl(84, 60%, 35%)" : (waveSurferActive || hasTeleportImmunity) ? "hsl(280, 50%, 40%)" : superTapActive ? "hsl(45, 100%, 40%)" : COLORS.feetOutline}`,
             boxShadow: (!jumpAroundActive && (waveSurferActive || hasTeleportImmunity)) ? "0 0 12px hsl(280, 60%, 50%), 0 0 24px hsl(174, 70%, 40%)" : undefined,
             borderRadius: ghostToeActive ? "0 0 4px 4px" : "4px",
           }}
         >
-          {/* Toe detail line */}
-          <div style={{
-            position: "absolute",
-            top: 2,
-            left: "50%",
-            width: 1,
-            height: footHeight * 0.3,
-            backgroundColor: "hsla(0, 0%, 0%, 0.15)",
-          }} />
+          {footAnatomy}
           {/* Toe Warrior immunity line - dotted line at 35% from top */}
           {footType === "toeWarrior" && (
             <div

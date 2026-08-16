@@ -424,7 +424,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const spawnTouchBurst = useCallback((row: number, label: string) => {
     const id = touchBurstIdRef.current++;
     setTouchBursts((prev) => [...prev.slice(-3), { id, row, label }]);
-    setTimeout(() => setTouchBursts((prev) => prev.filter((b) => b.id !== id)), 900);
+    setTimeout(() => setTouchBursts((prev) => prev.filter((b) => b.id !== id)), 1200);
   }, []);
 
   const triggerMissShake = useCallback(() => {
@@ -4747,8 +4747,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 );
               })}
               <div
-                className="absolute -translate-x-1/2 font-display text-base font-bold"
-                style={{ color: "hsl(160, 85%, 62%)", textShadow: "0 1px 3px rgba(0,0,0,0.7)", animation: "floatUpFade 0.9s ease-out forwards" }}
+                className="absolute -translate-x-1/2 font-display text-3xl font-bold"
+                style={{ color: "hsl(160, 85%, 62%)", textShadow: "0 2px 4px rgba(0,0,0,0.8)", animation: "floatUpFade 1.1s ease-out forwards" }}
               >
                 {b.label}
               </div>
