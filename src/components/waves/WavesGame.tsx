@@ -18,6 +18,7 @@ import GameGrid from "./game/GameGrid";
 import Feet from "./game/Feet";
 import OceanLines from "./game/OceanLines";
 import SandTexture from "./game/SandTexture";
+import MissBurst from "./game/MissBurst";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 // Boss Quick Run import
@@ -300,8 +301,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   // fading footprints on sand. Spawned from plain loop/handler code only.
   const [touchBursts, setTouchBursts] = useState<Array<{ id: number; row: number; label: string }>>([]);
   const touchBurstIdRef = useRef(0);
-  const [missShake, setMissShake] = useState(false);
-  const missShakeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [missBursts, setMissBursts] = useState<Array<{ id: number }>>([]);
+  const missBurstIdRef = useRef(0);
   // Scale the fixed-size board down on short viewports (see the board wrapper)
   const [boardScale, setBoardScale] = useState(1);
   const [footprints, setFootprints] = useState<Array<{ id: number; row: number }>>([]);
@@ -427,12 +428,13 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     setTimeout(() => setTouchBursts((prev) => prev.filter((b) => b.id !== id)), 1200);
   }, []);
 
-  const triggerMissShake = useCallback(() => {
-    if (missShakeTimeoutRef.current) clearTimeout(missShakeTimeoutRef.current);
-    setMissShake(false);
-    // Re-trigger on the next frame so back-to-back misses restart the animation
-    requestAnimationFrame(() => setMissShake(true));
-    missShakeTimeoutRef.current = setTimeout(() => setMissShake(false), 550);
+  // Wave-spray around the board edges on a miss (replaced the old screen
+  // shake — too harsh for the game's feel). Each burst is its own keyed
+  // instance so back-to-back misses each get a full animation.
+  const spawnMissBurst = useCallback(() => {
+    const id = missBurstIdRef.current++;
+    setMissBursts((prev) => [...prev.slice(-2), { id }]);
+    setTimeout(() => setMissBursts((prev) => prev.filter((b) => b.id !== id)), 800);
   }, []);
 
   // Drop a footprint roughly every stride (0.75 rows) of sand movement
@@ -1255,7 +1257,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             ? (runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES)
             : maxMissed;
           sfxMiss();
-          triggerMissShake();
+          spawnMissBurst();
           if (totalMissedForCheck >= maxMissedForCheck) {
             sfxGameOver();
             setGameOverReason("missed");
@@ -3930,10 +3932,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           }
         >
           <div
-            className={cn(
-              "relative border-4 border-slate-700 rounded-lg overflow-hidden shadow-2xl",
-              missShake && "animate-shake"
-            )}
+            className="relative border-4 border-slate-700 rounded-lg overflow-hidden shadow-2xl"
             style={{
               width: OCEAN_WIDTH * PIXEL_SIZE,
               height: TOTAL_HEIGHT * PIXEL_SIZE,
@@ -4726,6 +4725,11 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               <div className="absolute rounded-full" style={{ width: 10, height: 6, left: 2, backgroundColor: "hsla(35, 40%, 40%, 0.35)", animation: "footprintFade 1.4s ease-out forwards" }} />
               <div className="absolute rounded-full" style={{ width: 10, height: 6, left: 20, top: 3, backgroundColor: "hsla(35, 40%, 40%, 0.35)", animation: "footprintFade 1.4s ease-out forwards" }} />
             </div>
+          ))}
+
+          {/* Miss: wave-spray around the board edges */}
+          {missBursts.map(b => (
+            <MissBurst key={b.id} />
           ))}
 
           {/* Wave-touch splash + floating score */}
