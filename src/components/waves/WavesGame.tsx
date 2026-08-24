@@ -122,10 +122,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const [footType, setFootType] = useState<FootType>("tourist"); // Foot type affects speed and water drain
   const [autoToeTap, setAutoToeTap] = useState(false); // Auto toe tap mode
   
-  // Momentum mode state - gear system (-3 to +3)
-  // Gear: -3 = run toward shore, -2 = walk toward shore, -1 = crawl toward shore
-  //       0 = neutral, +1 = crawl away, +2 = walk away, +3 = run away
-  const [momentumGear, setMomentumGear] = useState(0); // -3 to +3
+  // Momentum mode state - gear system (-2 to +2)
+  // Gear: -2 = run toward shore, -1 = walk toward shore,
+  //        0 = neutral, +1 = walk away, +2 = run away
+  const [momentumGear, setMomentumGear] = useState(0); // -2 to +2
   const momentumGearRef = useRef(0);
   const movementModeRef = useRef<MovementMode>("standard");
   const footTypeRef = useRef<FootType>("tourist");
@@ -140,9 +140,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   // Helper to get gear speed in rows/sec
   const getGearSpeed = (gear: number): number => {
     switch (Math.abs(gear)) {
-      case 3: return 2.5;   // Run
-      case 2: return 1.25;  // Walk
-      case 1: return 0.5;   // Crawl
+      case 2: return 2.5;   // Run
+      case 1: return 1.25;  // Walk
       default: return 0;    // Neutral
     }
   };
@@ -150,7 +149,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   // Helper to get gear name for HUD
   const getGearName = (gear: number): string => {
     if (gear === 0) return "Neutral";
-    const speed = Math.abs(gear) === 3 ? "Run" : Math.abs(gear) === 2 ? "Walk" : "Crawl";
+    const speed = Math.abs(gear) === 2 ? "Run" : "Walk";
     const direction = gear < 0 ? "↑ Shore" : "↓ Ocean";
     return `${speed} ${direction}`;
   };
@@ -2192,8 +2191,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     return false;
   }, []);
 
-  // Momentum mode uses a gear system (-3 to +3) instead of continuous velocity
-  // Gear speeds: Run = 2.5 rows/sec, Walk = 1.25 rows/sec, Crawl = 0.5 rows/sec
+  // Momentum mode uses a gear system (-2 to +2) instead of continuous velocity
+  // Gear speeds: Run = 2.5 rows/sec, Walk = 1.25 rows/sec
 
   // Create movement functions that can be used for both immediate and interval calls
   const doMoveUp = useCallback(() => {
@@ -2204,7 +2203,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (movementModeRef.current === "momentum") {
       const currentGear = momentumGearRef.current;
       // Only shift if not already at max gear toward shore
-      if (currentGear > -3) {
+      if (currentGear > -2) {
         const newGear = currentGear - 1;
         momentumGearRef.current = newGear;
         setMomentumGear(newGear);
@@ -2253,7 +2252,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (movementModeRef.current === "momentum") {
       const currentGear = momentumGearRef.current;
       // Only shift if not already at max gear away from shore
-      if (currentGear < 3) {
+      if (currentGear < 2) {
         const newGear = currentGear + 1;
         momentumGearRef.current = newGear;
         setMomentumGear(newGear);
@@ -2301,8 +2300,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     const downHeld = keyHeldRef.current.down;
 
     // Gear system: no hold acceleration, speed is determined purely by gear
-    // Gear: -3 = run toward shore, -2 = walk toward shore, -1 = crawl toward shore
-    //       0 = neutral, +1 = crawl away, +2 = walk away, +3 = run away
+    // Gear: -2 = run toward shore, -1 = walk toward shore,
+    //        0 = neutral, +1 = walk away, +2 = run away
     const gear = momentumGearRef.current;
     
     // Get base speed from gear (rows/sec)
@@ -4016,15 +4015,15 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               }}
             >
               <div className="w-full h-full bg-slate-900/70 rounded border border-amber-500/40 flex flex-col overflow-hidden">
-                {/* 7 gear segments */}
-                {[-3, -2, -1, 0, 1, 2, 3].map((gear) => {
+                {/* 5 gear segments */}
+                {[-2, -1, 0, 1, 2].map((gear) => {
                   const isActive = momentumGear === gear;
                   const segmentColor = gear === 0 ? "bg-slate-400" :
-                    gear < 0 ? (gear === -1 ? "bg-green-400" : gear === -2 ? "bg-green-500" : "bg-green-700") :
-                    (gear === 1 ? "bg-red-400" : gear === 2 ? "bg-red-500" : "bg-red-700");
+                    gear < 0 ? (gear === -1 ? "bg-green-400" : "bg-green-600") :
+                    (gear === 1 ? "bg-red-400" : "bg-red-600");
                   const inactiveColor = gear === 0 ? "bg-slate-700/40" :
-                    gear < 0 ? (gear === -1 ? "bg-green-400/20" : gear === -2 ? "bg-green-500/20" : "bg-green-700/20") :
-                    (gear === 1 ? "bg-red-400/20" : gear === 2 ? "bg-red-500/20" : "bg-red-700/20");
+                    gear < 0 ? (gear === -1 ? "bg-green-400/20" : "bg-green-600/20") :
+                    (gear === 1 ? "bg-red-400/20" : "bg-red-600/20");
                   
                   return (
                     <div 
@@ -4163,9 +4162,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   <span className={cn(
                     "text-lg font-display font-mono leading-tight",
                     momentumGear === 0 ? "text-slate-400" :
-                    Math.abs(momentumGear) === 3 ? "text-red-400" :
-                    Math.abs(momentumGear) === 2 ? "text-amber-400" :
-                    "text-green-400"
+                    Math.abs(momentumGear) === 2 ? "text-red-400" :
+                    "text-amber-400"
                   )}>
                     {getGearName(momentumGear)}
                   </span>
@@ -4751,8 +4749,13 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 );
               })}
               <div
-                className="absolute -translate-x-1/2 font-display text-3xl font-bold"
-                style={{ color: "hsl(160, 85%, 62%)", textShadow: "0 2px 4px rgba(0,0,0,0.8)", animation: "floatUpFade 1.1s ease-out forwards" }}
+                className="absolute -translate-x-1/2 font-display text-6xl font-bold"
+                style={{
+                  color: "hsl(160, 85%, 62%)",
+                  textShadow: "0 3px 6px rgba(0,0,0,0.85), 0 0 18px hsla(160, 85%, 55%, 0.55)",
+                  WebkitTextStroke: "1.5px hsl(160, 60%, 20%)",
+                  animation: "floatUpFade 1.2s ease-out forwards",
+                }}
               >
                 {b.label}
               </div>
@@ -4873,14 +4876,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             {/* Mobile Gear Meter - to the left of up/down buttons */}
             {movementMode === "momentum" && (
               <div className="h-[120px] w-4 bg-slate-900/80 rounded border border-amber-500/40 flex flex-col overflow-hidden">
-                {[-3, -2, -1, 0, 1, 2, 3].map((gear) => {
+                {[-2, -1, 0, 1, 2].map((gear) => {
                   const isActive = momentumGear === gear;
                   const segmentColor = gear === 0 ? "bg-slate-400" :
-                    gear < 0 ? (gear === -1 ? "bg-green-400" : gear === -2 ? "bg-green-500" : "bg-green-700") :
-                    (gear === 1 ? "bg-red-400" : gear === 2 ? "bg-red-500" : "bg-red-700");
+                    gear < 0 ? (gear === -1 ? "bg-green-400" : "bg-green-600") :
+                    (gear === 1 ? "bg-red-400" : "bg-red-600");
                   const inactiveColor = gear === 0 ? "bg-slate-700/40" :
-                    gear < 0 ? (gear === -1 ? "bg-green-400/20" : gear === -2 ? "bg-green-500/20" : "bg-green-700/20") :
-                    (gear === 1 ? "bg-red-400/20" : gear === 2 ? "bg-red-500/20" : "bg-red-700/20");
+                    gear < 0 ? (gear === -1 ? "bg-green-400/20" : "bg-green-600/20") :
+                    (gear === 1 ? "bg-red-400/20" : "bg-red-600/20");
                   
                   return (
                     <div 

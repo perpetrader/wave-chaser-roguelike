@@ -342,18 +342,18 @@
 
 @keyframes floatUpFade {
   0% {
-    transform: translate(-50%, 0) scale(0.6);
+    transform: translate(-50%, 0) scale(0.4);
     opacity: 0;
   }
   15% {
-    transform: translate(-50%, -6px) scale(1.1);
+    transform: translate(-50%, -8px) scale(1.25);
     opacity: 1;
   }
   30% {
-    transform: translate(-50%, -10px) scale(1);
+    transform: translate(-50%, -14px) scale(1);
   }
   100% {
-    transform: translate(-50%, -40px) scale(1);
+    transform: translate(-50%, -56px) scale(1);
     opacity: 0;
   }
 }

@@ -27,7 +27,7 @@ interface RoguelikeStartScreenProps {
 const MOVEMENT_MODES: { mode: MovementMode; name: string; description: string }[] = [
   { mode: "standard", name: "Standard", description: "Direct movement with arrow keys" },
   { mode: "slowerForward", name: "Slower Forward", description: "30% slower when moving toward shore" },
-  { mode: "momentum", name: "Momentum", description: "Accelerate/decelerate with arrow keys" },
+  { mode: "momentum", name: "Momentum", description: "Shift between Walk/Run gears with arrow keys" },
 ];
 
 const RUN_TYPES: { type: RunType; name: string; description: string }[] = [
@@ -675,15 +675,32 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType, 
         <CollapsibleTrigger className="flex items-center justify-between w-full bg-slate-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-violet-500/30 hover:bg-slate-900/70 transition-colors">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-violet-400" />
-            <span className="text-base sm:text-lg font-display text-violet-400">What's New (v0.955)</span>
+            <span className="text-base sm:text-lg font-display text-violet-400">What's New (v0.96)</span>
           </div>
           <ChevronDown className={`w-5 h-5 text-violet-400/70 transition-transform ${changelogOpen ? "rotate-180" : ""}`} />
         </CollapsibleTrigger>
         <CollapsibleContent className="bg-slate-900/90 backdrop-blur-sm rounded-b-xl border border-t-0 border-violet-500/30 p-3 sm:p-4">
           <div className="space-y-4">
             <div className="space-y-2">
-              <p className="text-violet-400 font-semibold text-sm">Version 0.959</p>
+              <p className="text-violet-400 font-semibold text-sm">Version 0.96</p>
               <ul className="text-white/80 text-sm space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-violet-400">•</span>
+                  <span>Momentum Mode: Simplified to 2 speeds per direction (Walk/Run, Crawl removed)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-violet-400">•</span>
+                  <span>New foot-shaped feet that step one foot at a time — faster speed, bigger steps</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-violet-400">•</span>
+                  <span>Bigger score popup when touching a wave</span>
+                </li>
+              </ul>
+            </div>
+            <div className="space-y-2 pt-2 border-t border-white/10">
+              <p className="text-violet-400/70 font-semibold text-sm">Version 0.959</p>
+              <ul className="text-white/60 text-sm space-y-1.5">
                 <li className="flex items-start gap-2">
                   <span className="text-violet-400">•</span>
                   <span>New Boss Hell Run mode: Harder 10-level gauntlet with ±3 variance, 30s timer, 10 max misses</span>
