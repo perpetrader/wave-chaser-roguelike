@@ -54,7 +54,7 @@ type GameOverReason = "timer" | "missed" | null;
 export type { MovementMode, RunType } from "./game/constants";
 
 import {
-  FOOT_TYPE_MODIFIERS, BEACH_EFFECTS, type BeachEffectType,
+  FOOT_TYPE_MODIFIERS, BEACH_EFFECTS, gaitQuantum, type BeachEffectType,
   FLASHLIGHT_DURATION_BOSS, FLASHLIGHT_DURATION_REDUCED, FLASHLIGHT_COOLDOWN,
   FLASHLIGHT_ROWS_BOSS, FLASHLIGHT_ROWS_REDUCED,
   SAVED_RUN_KEY, SAVED_BONANZA_RUN_KEY, SLAY_SAVED_RUN_KEY,
@@ -100,9 +100,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   // the movement systems drive; the feet alternate stepping onto it. The
   // front (ocean-most) foot's toe is the contact point for waves and water.
   const gaitRef = useRef({
-    left: 35, right: 35, lastPos: 35, lastMoveT: 0,
+    left: 35, right: 35, lastPos: 35,
     accum: 0, dir: 0, speed: 0, stepId: 0,
   });
+  const gaitSettleTimerRef = useRef<number | null>(null);
   const frontFootRowRef = useRef(35);
   const [feetGait, setFeetGait] = useState({
     left: 35, right: 35,
@@ -472,47 +473,70 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (foot === "left") g.left = landRow; else g.right = landRow;
     g.stepId++;
     frontFootRowRef.current = Math.min(g.left, g.right);
-    // Faster movement = quicker swing
-    const stepDurMs = Math.min(Math.max((0.9 / Math.max(g.speed, 0.5)) * 220, 80), 220);
+    // Swing lasts ~65% of the time until the next step is due, so the walk
+    // reads as continuous motion rather than plant-pause-plant
+    const q = gaitQuantum(g.speed);
+    const stepDurMs = Math.min(Math.max((q / Math.max(g.speed, 0.3)) * 650, 70), 190);
     setFeetGait({ left: g.left, right: g.right, steppingFoot: foot, stepDurMs, stepId: g.stepId });
     if (Math.abs(landRow - oldRow) >= 0.4) spawnFootprint(oldRow, foot);
   }, [spawnFootprint]);
 
-  // Feed every body-position change through the gait. A step fires when the
-  // body has traveled a full stride since the last one; the stride grows with
-  // speed, so running takes visibly bigger steps than walking.
-  const advanceGait = useCallback((newPos: number) => {
+  // When movement stops mid-stride, finish the walk: plant the trailing foot
+  // on the body's row so the front toe ends exactly where the old continuous
+  // movement would have — stopping never costs reach.
+  const armGaitSettle = useCallback(() => {
+    if (gaitSettleTimerRef.current !== null) clearTimeout(gaitSettleTimerRef.current);
+    gaitSettleTimerRef.current = window.setTimeout(() => {
+      gaitSettleTimerRef.current = null;
+      const g = gaitRef.current;
+      if (g.dir === 0) return;
+      const trailingRow = g.dir > 0 ? Math.min(g.left, g.right) : Math.max(g.left, g.right);
+      if (Math.abs(g.lastPos - trailingRow) > 0.05) {
+        g.accum = 0;
+        fireGaitStep(g.lastPos);
+      }
+    }, 160);
+  }, [fireGaitStep]);
+
+  // Feed every body-position change through the gait, with the mover's known
+  // speed (rows/sec). The body's movement is untouched; the feet quantize it:
+  // a step fires each time the body travels one quantum, and the stepping
+  // foot lands on the body's row. The front toe therefore advances exactly
+  // one quantum per step and averages exactly the body's speed — overall
+  // movement speed is identical to the old continuous feet. The quantum is a
+  // pure function of speed (no estimation), so step sizes stay consistent for
+  // as long as the speed itself is constant.
+  const advanceGait = useCallback((newPos: number, rowsPerSec: number) => {
     const g = gaitRef.current;
     const delta = newPos - g.lastPos;
     if (delta === 0) return;
-    const now = performance.now();
-    const dt = Math.min(Math.max(now - g.lastMoveT, 8), 250);
-    g.lastMoveT = now;
     g.lastPos = newPos;
+    g.speed = rowsPerSec;
     const dir = delta > 0 ? 1 : -1;
-    const instantSpeed = Math.abs(delta) / (dt / 1000);
     if (dir !== g.dir) {
       // Direction change (or first move from rest): step immediately for
-      // instant feedback — unless the trailing foot is already standing at
-      // the body's row, in which case the step would be invisible
+      // instant feedback, unless the step would be too small to read
       g.dir = dir;
-      g.speed = instantSpeed;
       g.accum = 0;
       const trailingRow = dir > 0 ? Math.min(g.left, g.right) : Math.max(g.left, g.right);
-      if (Math.abs(newPos - trailingRow) > 0.05) fireGaitStep(newPos);
+      if (Math.abs(newPos - trailingRow) > 0.15) fireGaitStep(newPos);
+      armGaitSettle();
       return;
     }
-    g.speed = g.speed * 0.7 + instantSpeed * 0.3;
     g.accum += Math.abs(delta);
-    const stride = Math.min(Math.max(0.35 + g.speed * 0.3, 0.4), 1.4);
-    if (g.accum >= stride) {
+    if (g.accum >= gaitQuantum(rowsPerSec)) {
       g.accum = 0;
       fireGaitStep(newPos);
     }
-  }, [fireGaitStep]);
+    armGaitSettle();
+  }, [fireGaitStep, armGaitSettle]);
 
   // Snap both feet to a row instantly (teleports, knockbacks, level start)
   const resetGait = useCallback((row: number) => {
+    if (gaitSettleTimerRef.current !== null) {
+      clearTimeout(gaitSettleTimerRef.current);
+      gaitSettleTimerRef.current = null;
+    }
     const g = gaitRef.current;
     g.left = row;
     g.right = row;
@@ -2315,7 +2339,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     feetPositionRef.current = newPos;
     setFeetPosition(newPos);
     if (isRoguelike) setTotalSteps(s => s + 1);
-    advanceGait(newPos);
+    // Held movement repeats every ~100ms, so the equivalent continuous speed
+    // is one hop per tenth of a second
+    advanceGait(newPos, moveStep * 10);
   }, [gameState, isRoguelike, isPositionBlockedByPerson, advanceGait]);
 
   const doMoveDown = useCallback(() => {
@@ -2358,7 +2384,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     feetPositionRef.current = newPos;
     setFeetPosition(newPos);
     if (isRoguelike) setTotalSteps(s => s + 1);
-    advanceGait(newPos);
+    // Held movement repeats every ~100ms, so the equivalent continuous speed
+    // is one hop per tenth of a second
+    advanceGait(newPos, moveStep * 10);
   }, [gameState, isRoguelike, isPositionBlockedByPerson, advanceGait]);
 
   // Update position based on speed for momentum mode (called from game loop)
@@ -2416,7 +2444,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         // Update ref immediately so the rest of the game loop uses the correct value
         feetPositionRef.current = newPos;
         setFeetPosition(newPos);
-        advanceGait(newPos);
+        advanceGait(newPos, Math.abs(moveThisFrame) / dtSec);
 
         if (Math.abs(moveThisFrame) > 0.01) {
           if (isRoguelikeRef.current) setTotalSteps((s) => s + 1);
