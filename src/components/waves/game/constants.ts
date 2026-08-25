@@ -41,12 +41,12 @@ export const FOOT_TYPE_MODIFIERS: Record<FootType, { speedMultiplier: number; dr
   toeWarrior: { speedMultiplier: 1.0, drainMultiplier: 1.4 }, // Drain only applies when back 65% is in water
 };
 
-// Walking gait: rows of body travel per step. A fixed quantum in every
-// movement mode (matches standard controls at base speed: one step per three
-// 0.25-row hops), so a step always looks the same size — faster movement
-// just steps more often. The front foot still averages exactly the body's
-// speed because steps fire per distance traveled.
-export const GAIT_STEP_ROWS = 0.75;
+// Walking gait: rows of body travel per step — the size of a single tap in
+// standard controls. Tap modes step once per click (held repeat included);
+// momentum steps every quantum of travel, so faster gears just step more
+// often. The front foot always averages exactly the body's speed because
+// steps fire per distance traveled.
+export const GAIT_STEP_ROWS = 0.25;
 
 // The 4 ability slots with their keyboard bindings
 export const ABILITY_KEYS = ["C", "V", "B", "N"] as const;

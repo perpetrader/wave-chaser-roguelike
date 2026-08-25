@@ -505,7 +505,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   // movement speed is identical to the old continuous feet. The quantum is a
   // pure function of speed (no estimation), so step sizes stay consistent for
   // as long as the speed itself is constant.
-  const advanceGait = useCallback((newPos: number, rowsPerSec: number) => {
+  const advanceGait = useCallback((newPos: number, rowsPerSec: number, quantum: number = GAIT_STEP_ROWS) => {
     const g = gaitRef.current;
     const delta = newPos - g.lastPos;
     if (delta === 0) return;
@@ -518,12 +518,12 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       g.dir = dir;
       g.accum = 0;
       const trailingRow = dir > 0 ? Math.min(g.left, g.right) : Math.max(g.left, g.right);
-      if (Math.abs(newPos - trailingRow) > 0.15) fireGaitStep(newPos);
+      if (Math.abs(newPos - trailingRow) > 0.05) fireGaitStep(newPos);
       armGaitSettle();
       return;
     }
     g.accum += Math.abs(delta);
-    if (g.accum >= GAIT_STEP_ROWS) {
+    if (g.accum >= quantum) {
       g.accum = 0;
       fireGaitStep(newPos);
     }
@@ -2339,8 +2339,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     setFeetPosition(newPos);
     if (isRoguelike) setTotalSteps(s => s + 1);
     // Held movement repeats every ~100ms, so the equivalent continuous speed
-    // is one hop per tenth of a second
-    advanceGait(newPos, moveStep * 10);
+    // is one hop per tenth of a second. The quantum is the hop itself, so
+    // every click (including hold repeats) takes exactly one step.
+    advanceGait(newPos, moveStep * 10, moveStep);
   }, [gameState, isRoguelike, isPositionBlockedByPerson, advanceGait]);
 
   const doMoveDown = useCallback(() => {
@@ -2384,8 +2385,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     setFeetPosition(newPos);
     if (isRoguelike) setTotalSteps(s => s + 1);
     // Held movement repeats every ~100ms, so the equivalent continuous speed
-    // is one hop per tenth of a second
-    advanceGait(newPos, moveStep * 10);
+    // is one hop per tenth of a second. The quantum is the hop itself, so
+    // every click (including hold repeats) takes exactly one step.
+    advanceGait(newPos, moveStep * 10, moveStep);
   }, [gameState, isRoguelike, isPositionBlockedByPerson, advanceGait]);
 
   // Update position based on speed for momentum mode (called from game loop)
