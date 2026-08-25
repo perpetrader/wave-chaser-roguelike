@@ -86,6 +86,8 @@ const GameGrid = React.memo(function GameGrid({
 
   // Loop-invariant: the next incoming wave is the same for every cell
   const nextIncomingWave = waves.find((wave) => wave.phase === "incoming");
+  // Shoreline is submerged while any wave body reaches onto the beach
+  const shorelineSubmerged = waves.some((wave) => wave.row >= OCEAN_HEIGHT);
 
   for (let y = 0; y < TOTAL_HEIGHT; y++) {
     // Per-row state (identical for every cell in this row)
@@ -114,6 +116,15 @@ const GameGrid = React.memo(function GameGrid({
     const spikeWave = isSpikeWavesActive ? waves.find((wave) => y === wave.row + 1) : null;
     const isSpikeCell = !!spikeWave; // Full width, we'll render half-height in the cell
 
+    // Wave realism (all deterministic from wave state, no timers):
+    // churn = the lighter, frothy water in the row right behind the crest
+    const churnWave = !isCrest ? waves.find((wave) => y === wave.row - 1) : undefined;
+    // wet sand = beach a receding wave has uncovered but not yet "dried"
+    const isWetSandRow = y >= OCEAN_HEIGHT &&
+      waves.some((wave) => wave.phase === "outgoing" && y > wave.row && y <= wave.maxReach);
+    // standing foam line where the ocean laps the dry beach
+    const isShorelineFoamRow = y === OCEAN_HEIGHT - 1 && !shorelineSubmerged;
+
     for (let x = 0; x < OCEAN_WIDTH; x++) {
       // Check if Crystal Ball is active and this is the peak row of the next incoming wave
       // Check for both beach and underwater beach (wave-covered) positions
@@ -138,6 +149,8 @@ const GameGrid = React.memo(function GameGrid({
         // Crystal ball shows dark line on bottom half of the row
         if (isCrystalBallIndicator) {
           color = "hsl(42, 30%, 45%)"; // Darker sand color
+        } else if (isWetSandRow) {
+          color = "hsl(42, 45%, 66%)"; // Wet sand a receding wave leaves behind
         } else {
           color = COLORS.sand;
         }
@@ -187,11 +200,53 @@ const GameGrid = React.memo(function GameGrid({
             zIndex: isConeEdge ? 15 : isCrystalBallIndicator ? 20 : ((isTouchedCrest || isMagnetCrest) && showEffectsInLight) ? 10 : undefined,
           }}
         >
-          {/* Wave foam line: bright highlight at top of crest cells */}
-          {isCrest && showEffectsInLight && (
-            <div className="absolute left-0 right-0 top-0" style={{
-              height: 2,
-              backgroundColor: crestWave?.touched ? "hsla(160, 90%, 80%, 0.7)" : "hsla(180, 100%, 95%, 0.8)",
+          {/* Wave front: depth gradient into the water behind, plus a
+              scalloped foam edge on the leading (beach-facing) side. The
+              pattern is a function of column and wave row, so the foam line
+              undulates across the board and shifts as the wave rolls. */}
+          {isCrest && crestWave && showEffectsInLight && (
+            <>
+              <div className="absolute inset-0 pointer-events-none" style={{
+                background: "linear-gradient(to top, hsla(0, 0%, 100%, 0.20), hsla(202, 70%, 42%, 0.35))",
+              }} />
+              <div className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{
+                height: 4 + Math.round(2.5 * Math.sin(x * 0.9 + crestWave.row * 0.7)),
+                backgroundColor: crestWave.touched ? "hsla(150, 85%, 90%, 0.95)" : "hsla(185, 100%, 97%, 0.95)",
+              }} />
+              {/* Stray foam pixel above the edge for froth (sparse) */}
+              {(x * 7 + crestWave.row * 5) % 4 === 0 && (
+                <div className="absolute pointer-events-none" style={{
+                  width: 3,
+                  height: 3,
+                  left: (x * 11 + crestWave.row * 3) % (PIXEL_SIZE - 3),
+                  bottom: 7 + ((x * 5 + crestWave.row) % 5),
+                  backgroundColor: "hsla(0, 0%, 100%, 0.85)",
+                }} />
+              )}
+            </>
+          )}
+          {/* Churned lighter water just behind the crest, with foam flecks */}
+          {churnWave && showEffectsInLight && (
+            <>
+              <div className="absolute inset-0 pointer-events-none" style={{
+                backgroundColor: "hsla(187, 80%, 80%, 0.20)",
+              }} />
+              {(x * 13 + churnWave.row * 7) % 5 === 0 && (
+                <div className="absolute pointer-events-none" style={{
+                  width: 3,
+                  height: 3,
+                  left: (x * 9 + churnWave.row * 5) % (PIXEL_SIZE - 3),
+                  top: (x * 5 + churnWave.row * 11) % (PIXEL_SIZE - 3),
+                  backgroundColor: "hsla(0, 0%, 100%, 0.5)",
+                }} />
+              )}
+            </>
+          )}
+          {/* Gentle standing foam where the ocean laps the dry beach */}
+          {isShorelineFoamRow && showEffectsInLight && (
+            <div className="absolute left-0 right-0 bottom-0 pointer-events-none" style={{
+              height: 2 + ((x * 3) % 2),
+              backgroundColor: "hsla(0, 0%, 100%, 0.30)",
             }} />
           )}
           {/* Spike wave indicator - half-height silver bar at top of cell */}

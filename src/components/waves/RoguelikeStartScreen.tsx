@@ -696,6 +696,10 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType, 
                   <span className="text-violet-400">•</span>
                   <span>Bigger score popup when touching a wave</span>
                 </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-violet-400">•</span>
+                  <span>Waves roll in with foam edges and churned water, and leave wet sand as they recede</span>
+                </li>
               </ul>
             </div>
             <div className="space-y-2 pt-2 border-t border-white/10">
