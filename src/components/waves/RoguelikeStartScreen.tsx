@@ -690,7 +690,7 @@ const RoguelikeStartScreen = ({ onStart, onContinue, hasSavedRun, savedRunType, 
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-violet-400">•</span>
-                  <span>New foot-shaped feet that step one foot at a time — faster speed, bigger steps</span>
+                  <span>Feet now truly walk: feet plant and step one at a time, and the front foot's toe is what touches waves and water</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-violet-400">•</span>

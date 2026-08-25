@@ -95,6 +95,20 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const [gameState, setGameState] = useState<GameState>("menu");
   const [difficulty, setDifficulty] = useState<WavesDifficulty>("medium");
   const [feetPosition, setFeetPosition] = useState(35);
+  // World-space walking gait: each foot plants at a real row and only moves
+  // when it takes a step. feetPosition stays the logical mover ("body") that
+  // the movement systems drive; the feet alternate stepping onto it. The
+  // front (ocean-most) foot's toe is the contact point for waves and water.
+  const gaitRef = useRef({
+    left: 35, right: 35, lastPos: 35, lastMoveT: 0,
+    accum: 0, dir: 0, speed: 0, stepId: 0,
+  });
+  const frontFootRowRef = useRef(35);
+  const [feetGait, setFeetGait] = useState({
+    left: 35, right: 35,
+    steppingFoot: null as "left" | "right" | null,
+    stepDurMs: 0, stepId: 0,
+  });
   const [isTapping, setIsTapping] = useState(false);
   const [feetMagnetized, setFeetMagnetized] = useState(false);
   const [waves, setWaves] = useState<Wave[]>([]);
@@ -304,9 +318,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const missBurstIdRef = useRef(0);
   // Scale the fixed-size board down on short viewports (see the board wrapper)
   const [boardScale, setBoardScale] = useState(1);
-  const [footprints, setFootprints] = useState<Array<{ id: number; row: number }>>([]);
+  const [footprints, setFootprints] = useState<Array<{ id: number; row: number; side: "left" | "right" }>>([]);
   const footprintIdRef = useRef(0);
-  const lastFootprintRowRef = useRef<number | null>(null);
   const [swappingSlot, setSwappingSlot] = useState<number | null>(null);
   const [showTimerTutorial, setShowTimerTutorial] = useState(false);
   const [showWavesTutorial, setShowWavesTutorial] = useState(false);
@@ -437,19 +450,79 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   }, []);
 
   // Drop a footprint roughly every stride (0.75 rows) of sand movement
-  const spawnFootprintIfNeeded = useCallback((newRow: number) => {
-    const last = lastFootprintRowRef.current;
-    if (last === null) {
-      lastFootprintRowRef.current = newRow;
+  // A footprint appears where a foot lifts off (dry sand only)
+  const spawnFootprint = useCallback((row: number, side: "left" | "right") => {
+    if (row < OCEAN_HEIGHT + 1) return;
+    const id = footprintIdRef.current++;
+    setFootprints((prev) => [...prev.slice(-7), { id, row, side }]);
+    setTimeout(() => setFootprints((prev) => prev.filter((f) => f.id !== id)), 1500);
+  }, []);
+
+  // Take one step: the foot trailing in the direction of travel swings onto
+  // the body's current row while the other foot stays planted. In steady
+  // motion this alternates feet naturally (each step makes the mover the new
+  // leader), and it stays correct through direction changes. Contact
+  // (frontFootRowRef) updates as the step fires.
+  const fireGaitStep = useCallback((landRow: number) => {
+    const g = gaitRef.current;
+    const foot: "left" | "right" = g.dir >= 0
+      ? (g.left <= g.right ? "left" : "right")
+      : (g.left >= g.right ? "left" : "right");
+    const oldRow = foot === "left" ? g.left : g.right;
+    if (foot === "left") g.left = landRow; else g.right = landRow;
+    g.stepId++;
+    frontFootRowRef.current = Math.min(g.left, g.right);
+    // Faster movement = quicker swing
+    const stepDurMs = Math.min(Math.max((0.9 / Math.max(g.speed, 0.5)) * 220, 80), 220);
+    setFeetGait({ left: g.left, right: g.right, steppingFoot: foot, stepDurMs, stepId: g.stepId });
+    if (Math.abs(landRow - oldRow) >= 0.4) spawnFootprint(oldRow, foot);
+  }, [spawnFootprint]);
+
+  // Feed every body-position change through the gait. A step fires when the
+  // body has traveled a full stride since the last one; the stride grows with
+  // speed, so running takes visibly bigger steps than walking.
+  const advanceGait = useCallback((newPos: number) => {
+    const g = gaitRef.current;
+    const delta = newPos - g.lastPos;
+    if (delta === 0) return;
+    const now = performance.now();
+    const dt = Math.min(Math.max(now - g.lastMoveT, 8), 250);
+    g.lastMoveT = now;
+    g.lastPos = newPos;
+    const dir = delta > 0 ? 1 : -1;
+    const instantSpeed = Math.abs(delta) / (dt / 1000);
+    if (dir !== g.dir) {
+      // Direction change (or first move from rest): step immediately for
+      // instant feedback — unless the trailing foot is already standing at
+      // the body's row, in which case the step would be invisible
+      g.dir = dir;
+      g.speed = instantSpeed;
+      g.accum = 0;
+      const trailingRow = dir > 0 ? Math.min(g.left, g.right) : Math.max(g.left, g.right);
+      if (Math.abs(newPos - trailingRow) > 0.05) fireGaitStep(newPos);
       return;
     }
-    if (Math.abs(newRow - last) < 0.75) return;
-    lastFootprintRowRef.current = newRow;
-    // Only on dry sand (footprints in water make no sense)
-    if (last < OCEAN_HEIGHT + 1) return;
-    const id = footprintIdRef.current++;
-    setFootprints((prev) => [...prev.slice(-7), { id, row: last }]);
-    setTimeout(() => setFootprints((prev) => prev.filter((f) => f.id !== id)), 1500);
+    g.speed = g.speed * 0.7 + instantSpeed * 0.3;
+    g.accum += Math.abs(delta);
+    const stride = Math.min(Math.max(0.35 + g.speed * 0.3, 0.4), 1.4);
+    if (g.accum >= stride) {
+      g.accum = 0;
+      fireGaitStep(newPos);
+    }
+  }, [fireGaitStep]);
+
+  // Snap both feet to a row instantly (teleports, knockbacks, level start)
+  const resetGait = useCallback((row: number) => {
+    const g = gaitRef.current;
+    g.left = row;
+    g.right = row;
+    g.lastPos = row;
+    g.accum = 0;
+    g.dir = 0;
+    g.speed = 0;
+    g.stepId++;
+    frontFootRowRef.current = row;
+    setFeetGait({ left: row, right: row, steppingFoot: null, stepDurMs: 0, stepId: g.stepId });
   }, []);
 
   useEffect(() => {
@@ -773,8 +846,9 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     // Super tap multiplies the extension (also affected by Gummy Beach)
     const toeExtension = superTap.active ? baseToeExtension * SUPER_TAP_MULTIPLIER : baseToeExtension;
-    return feetPosition - toeExtension;
-  }, [feetPosition, isTapping, superTap.active, permanentUpgrades.tapDancer, currentBeachEffect, runType, beachLevel]);
+    // Contact point: the front (ocean-most) foot's toe, not the body position
+    return Math.min(feetGait.left, feetGait.right) - toeExtension;
+  }, [feetGait, isTapping, superTap.active, permanentUpgrades.tapDancer, currentBeachEffect, runType, beachLevel]);
 
   // Get effective toe row including ghost toe extension
   const getEffectiveToeRow = useCallback(() => {
@@ -1003,6 +1077,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           const targetRow = Math.min(newWave.maxReach + 1, TOTAL_HEIGHT - 1);
           setFeetPosition(targetRow);
           feetPositionRef.current = targetRow;
+          resetGait(targetRow);
           // Reset momentum gear to neutral so player stays in position after teleport
           if (movementModeRef.current === "momentum") {
             setMomentumGear(0);
@@ -1084,7 +1159,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           if (superTapRef.current.active) {
             potentialToeExtension *= SUPER_TAP_MULTIPLIER;
           }
-          const potentialToeRow = feetPositionRef.current - potentialToeExtension;
+          const potentialToeRow = frontFootRowRef.current - potentialToeExtension;
           const potentialEffectiveToeRow = ghostToeRef.current.active ? potentialToeRow - GHOST_TOE_EXTENSION : potentialToeRow;
           const heelRowCheck = potentialToeRow + 2;
           
@@ -1116,7 +1191,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           if (superTapRef.current.active) {
             currentToeExtension *= SUPER_TAP_MULTIPLIER;
           }
-          const currentToeRow = feetPositionRef.current - currentToeExtension;
+          const currentToeRow = frontFootRowRef.current - currentToeExtension;
           const currentEffectiveToeRow = ghostToeRef.current.active ? currentToeRow - GHOST_TOE_EXTENSION : currentToeRow;
           const heelRowRelease = currentToeRow + 2;
           
@@ -1155,7 +1230,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           }
         }
         const toeExtension = superTapRef.current.active ? baseToeExtension * SUPER_TAP_MULTIPLIER : baseToeExtension;
-        const baseToeRow = feetPositionRef.current - toeExtension;
+        const baseToeRow = frontFootRowRef.current - toeExtension;
         // Ghost toe extends detection range but doesn't affect water timer
         const effectiveToeRow = ghostToeRef.current.active ? baseToeRow - GHOST_TOE_EXTENSION : baseToeRow;
         const heelRow = baseToeRow + 2; // Feet are 2 pixels tall
@@ -1183,7 +1258,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               // Wave Magnet: when active, constrain waves to peak within 1 row of player
               // Can be either closer or further from shore
               if (waveMagnetRef.current.active && !magnetAffected) {
-                const playerRow = feetPositionRef.current;
+                const playerRow = frontFootRowRef.current;
                 // Constrain peak to be within 1 row of player (-1, 0, or +1 offset)
                 const randomOffset = Math.floor(Math.random() * 3) - 1; // -1, 0, or 1 (integer)
                 effectiveMaxReach = Math.floor(playerRow) + randomOffset;
@@ -1266,7 +1341,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
         if (newTouches > 0) {
           sfxTouch();
-          spawnTouchBurst(feetPositionRef.current, `+${newTouches}`);
+          spawnTouchBurst(frontFootRowRef.current, `+${newTouches}`);
           // Wave Surfer: teleport to next UNTOUCHED incoming wave when touching a wave
           if (waveSurferRef.current.active) {
             // Find all untouched incoming waves, prioritize by highest currentRow (closest to peaking)
@@ -1283,6 +1358,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 const targetRow = Math.min(Math.max(targetWave.maxReach + 1 + randomOffset, OCEAN_HEIGHT), TOTAL_HEIGHT - 1);
               setFeetPosition(targetRow);
               feetPositionRef.current = targetRow;
+              resetGait(targetRow);
               // Reset momentum gear to neutral so player stays in position after teleport
               if (movementModeRef.current === "momentum") {
                 setMomentumGear(0);
@@ -1599,7 +1675,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         // Tap Dancer permanent upgrade affects the real toe row too
         const isGummyBeachWater = currentBeachEffectRef.current === "gummyBeach";
         const tapDancerMultiplierWater = 1 + (permanentUpgradesRef.current.tapDancer * 0.15);
-        const realToeRow = feetPositionRef.current - ((isTappingRef.current && !isGummyBeachWater) ? 0.5 * tapDancerMultiplierWater : 0);
+        const realToeRow = frontFootRowRef.current - ((isTappingRef.current && !isGummyBeachWater) ? 0.5 * tapDancerMultiplierWater : 0);
         
         // Toe Warrior: front 35% of feet (0.7 rows) is immune to water damage
         // For water timer drain, only count as touching if water reaches past the immune zone
@@ -1874,6 +1950,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 const safeRow = Math.min(TOTAL_HEIGHT - 1, currentFeetPos + 1);
                 setFeetPosition(safeRow);
                 feetPositionRef.current = safeRow;
+                resetGait(safeRow);
               }
               
               return { ...person, col: newCol };
@@ -2232,16 +2309,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       moveStep *= 0.7;
     }
     
-    setFeetPosition((prev) => {
-      const newPos = Math.max(prev - moveStep, OCEAN_HEIGHT);
-      if (isPositionBlockedByPerson(newPos)) return prev;
-      if (newPos !== prev) {
-        if (isRoguelike) setTotalSteps(s => s + 1);
-      }
-      return newPos;
-    });
-    spawnFootprintIfNeeded(feetPositionRef.current - moveStep);
-  }, [gameState, isRoguelike, isPositionBlockedByPerson, spawnFootprintIfNeeded]);
+    const prevPos = feetPositionRef.current;
+    const newPos = Math.max(prevPos - moveStep, OCEAN_HEIGHT);
+    if (isPositionBlockedByPerson(newPos) || newPos === prevPos) return;
+    feetPositionRef.current = newPos;
+    setFeetPosition(newPos);
+    if (isRoguelike) setTotalSteps(s => s + 1);
+    advanceGait(newPos);
+  }, [gameState, isRoguelike, isPositionBlockedByPerson, advanceGait]);
 
   const doMoveDown = useCallback(() => {
     if (gameState !== "playing") return;
@@ -2277,16 +2352,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       moveStep *= 0.80;
     }
     
-    setFeetPosition((prev) => {
-      const newPos = Math.min(prev + moveStep, TOTAL_HEIGHT - 1);
-      if (isPositionBlockedByPerson(newPos)) return prev;
-      if (newPos !== prev) {
-        if (isRoguelike) setTotalSteps(s => s + 1);
-      }
-      return newPos;
-    });
-    spawnFootprintIfNeeded(feetPositionRef.current + moveStep);
-  }, [gameState, isRoguelike, isPositionBlockedByPerson, spawnFootprintIfNeeded]);
+    const prevPos = feetPositionRef.current;
+    const newPos = Math.min(prevPos + moveStep, TOTAL_HEIGHT - 1);
+    if (isPositionBlockedByPerson(newPos) || newPos === prevPos) return;
+    feetPositionRef.current = newPos;
+    setFeetPosition(newPos);
+    if (isRoguelike) setTotalSteps(s => s + 1);
+    advanceGait(newPos);
+  }, [gameState, isRoguelike, isPositionBlockedByPerson, advanceGait]);
 
   // Update position based on speed for momentum mode (called from game loop)
   const updateMomentumPosition = useCallback((deltaTimeMs: number) => {
@@ -2343,14 +2416,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         // Update ref immediately so the rest of the game loop uses the correct value
         feetPositionRef.current = newPos;
         setFeetPosition(newPos);
-        spawnFootprintIfNeeded(newPos);
+        advanceGait(newPos);
 
         if (Math.abs(moveThisFrame) > 0.01) {
           if (isRoguelikeRef.current) setTotalSteps((s) => s + 1);
         }
       }
     }
-  }, [isPositionBlockedByPerson, getGearSpeed, spawnFootprintIfNeeded]);
+  }, [isPositionBlockedByPerson, getGearSpeed, advanceGait]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -2575,7 +2648,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     keyHeldRef.current = { up: false, down: false };
     
     setGameState("playing");
-    setFeetPosition(35);
+    setFeetPosition(35); resetGait(35);
     commitWaves([]);
     commitWaterTimer(timer);
     levelStartingWaterTimerRef.current = timer; // Store for Towel Off cap
@@ -3488,7 +3561,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
   const startGame = () => {
     setGameState("playing");
-    setFeetPosition(35);
+    setFeetPosition(35); resetGait(35);
     commitWaves([]);
     commitWaterTimer(5000);
     commitWavesTouched(0);
@@ -3678,7 +3751,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     // Show boss popup and start next level
     setShowBossBeachPopup(true);
     setGameState("playing");
-    setFeetPosition(35);
+    setFeetPosition(35); resetGait(35);
     commitWaves([]);
     commitWaterTimer(bossQuickRunCarryoverTimer);
     levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimer;
@@ -3742,7 +3815,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       // Show boss popup and start level with current carryover values
       setShowBossBeachPopup(true);
       setGameState("playing");
-      setFeetPosition(35);
+      setFeetPosition(35); resetGait(35);
       commitWaves([]);
       commitWaterTimer(bossQuickRunCarryoverTimerRef.current);
       levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimerRef.current;
@@ -4698,7 +4771,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               currentBeachEffect={currentBeachEffect}
               runType={runType}
               beachLevel={beachLevel}
-              feetPosition={feetPosition}
+              gait={feetGait}
               isTapping={isTapping}
               isTouching={isTouching}
               feetMagnetized={feetMagnetized}
@@ -4709,7 +4782,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               ghostToeActive={ghostToe.active}
               jumpAroundActive={jumpAround.active}
               waveSurferActive={waveSurfer.active}
-              movementMode={movementMode}
               footType={footType}
             />
           )}
@@ -4719,9 +4791,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
           {/* Footprints fading on the sand */}
           {footprints.map(f => (
-            <div key={f.id} className="absolute pointer-events-none" style={{ top: f.row * PIXEL_SIZE, left: (OCEAN_WIDTH / 2 - 1) * PIXEL_SIZE, zIndex: 5 }}>
-              <div className="absolute rounded-full" style={{ width: 10, height: 6, left: 2, backgroundColor: "hsla(35, 40%, 40%, 0.35)", animation: "footprintFade 1.4s ease-out forwards" }} />
-              <div className="absolute rounded-full" style={{ width: 10, height: 6, left: 20, top: 3, backgroundColor: "hsla(35, 40%, 40%, 0.35)", animation: "footprintFade 1.4s ease-out forwards" }} />
+            <div key={f.id} className="absolute pointer-events-none" style={{ top: f.row * PIXEL_SIZE, left: (OCEAN_WIDTH / 2 - 1) * PIXEL_SIZE + (f.side === "left" ? 2 : 20), zIndex: 5 }}>
+              <div className="absolute rounded-full" style={{ width: 10, height: 6, backgroundColor: "hsla(35, 40%, 40%, 0.35)", animation: "footprintFade 1.4s ease-out forwards" }} />
             </div>
           ))}
 
@@ -5099,7 +5170,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             
             // Start level with water timer from carryover
             setGameState("playing");
-            setFeetPosition(35);
+            setFeetPosition(35); resetGait(35);
             commitWaves([]);
             commitWaterTimer(bossQuickRunCarryoverTimerRef.current);
             levelStartingWaterTimerRef.current = bossQuickRunCarryoverTimerRef.current;

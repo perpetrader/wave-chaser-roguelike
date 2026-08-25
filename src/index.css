@@ -385,18 +385,21 @@
   }
 }
 
-@keyframes footIdle {
-  0%, 100% {
-    transform: translateY(0);
+@keyframes footStep {
+  0% {
+    transform: scale(1);
   }
-  50% {
-    transform: translateY(-1.5px);
+  45% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* Decorative motion only — gameplay-critical animation is unaffected */
-  [style*="footIdle"],
+  [style*="footStep"],
   [style*="oceanDrift"],
   [style*="foamPulse"] {
     animation: none !important;
