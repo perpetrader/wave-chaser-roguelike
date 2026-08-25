@@ -54,7 +54,7 @@ type GameOverReason = "timer" | "missed" | null;
 export type { MovementMode, RunType } from "./game/constants";
 
 import {
-  FOOT_TYPE_MODIFIERS, BEACH_EFFECTS, gaitQuantum, type BeachEffectType,
+  FOOT_TYPE_MODIFIERS, BEACH_EFFECTS, GAIT_STEP_ROWS, type BeachEffectType,
   FLASHLIGHT_DURATION_BOSS, FLASHLIGHT_DURATION_REDUCED, FLASHLIGHT_COOLDOWN,
   FLASHLIGHT_ROWS_BOSS, FLASHLIGHT_ROWS_REDUCED,
   SAVED_RUN_KEY, SAVED_BONANZA_RUN_KEY, SLAY_SAVED_RUN_KEY,
@@ -475,8 +475,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     frontFootRowRef.current = Math.min(g.left, g.right);
     // Swing lasts ~65% of the time until the next step is due, so the walk
     // reads as continuous motion rather than plant-pause-plant
-    const q = gaitQuantum(g.speed);
-    const stepDurMs = Math.min(Math.max((q / Math.max(g.speed, 0.3)) * 650, 70), 190);
+    const stepDurMs = Math.min(Math.max((GAIT_STEP_ROWS / Math.max(g.speed, 0.3)) * 650, 70), 190);
     setFeetGait({ left: g.left, right: g.right, steppingFoot: foot, stepDurMs, stepId: g.stepId });
     if (Math.abs(landRow - oldRow) >= 0.4) spawnFootprint(oldRow, foot);
   }, [spawnFootprint]);
@@ -524,7 +523,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       return;
     }
     g.accum += Math.abs(delta);
-    if (g.accum >= gaitQuantum(rowsPerSec)) {
+    if (g.accum >= GAIT_STEP_ROWS) {
       g.accum = 0;
       fireGaitStep(newPos);
     }
