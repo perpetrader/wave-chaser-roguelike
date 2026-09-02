@@ -5,6 +5,18 @@
 
 import type { AbilityState } from "./constants";
 
+// Unbiased Fisher-Yates shuffle. The `.sort(() => Math.random() - 0.5)`
+// idiom it replaces is engine-dependently biased — a real problem where the
+// shuffle decides run-defining outcomes like ability exclusions.
+export const shuffleArray = <T,>(array: readonly T[]): T[] => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
 // Advance one ability's duration/cooldown by dt milliseconds.
 // - Active abilities count down durationRemaining and flip to cooldown on expiry.
 // - Inactive abilities count down cooldownRemaining toward ready.

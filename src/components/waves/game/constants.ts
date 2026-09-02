@@ -71,6 +71,8 @@ export const BEACH_EFFECTS: { type: BeachEffectType; name: string; description: 
 // Flashlight settings for Nighttime boss beach
 export const FLASHLIGHT_DURATION_BOSS = 10000; // 10 seconds (boss level)
 export const FLASHLIGHT_DURATION_REDUCED = 25000; // 25 seconds (reduced mode)
+// Leveled-mode durations for levels 1-4 (boss strength uses FLASHLIGHT_DURATION_BOSS)
+export const FLASHLIGHT_LEVEL_DURATIONS = [30000, 25000, 20000, 15000];
 export const FLASHLIGHT_COOLDOWN = 5000; // 5 seconds
 export const FLASHLIGHT_ROWS_BOSS = 5; // Boss: 5 rows toward shore
 export const FLASHLIGHT_ROWS_REDUCED = 7; // Levels 1-4: 7 rows toward shore

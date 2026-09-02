@@ -55,7 +55,7 @@ export type { MovementMode, RunType } from "./game/constants";
 
 import {
   FOOT_TYPE_MODIFIERS, BEACH_EFFECTS, GAIT_STEP_ROWS, type BeachEffectType,
-  FLASHLIGHT_DURATION_BOSS, FLASHLIGHT_DURATION_REDUCED, FLASHLIGHT_COOLDOWN,
+  FLASHLIGHT_DURATION_BOSS, FLASHLIGHT_DURATION_REDUCED, FLASHLIGHT_LEVEL_DURATIONS, FLASHLIGHT_COOLDOWN,
   FLASHLIGHT_ROWS_BOSS, FLASHLIGHT_ROWS_REDUCED,
   SAVED_RUN_KEY, SAVED_BONANZA_RUN_KEY, SLAY_SAVED_RUN_KEY,
   BOSS_QUICK_RUN_HIGH_SCORE_KEY, BOSS_HELL_RUN_HIGH_SCORE_KEY,
@@ -82,7 +82,7 @@ import {
   heavySandPenaltyMultiplier,
   gummyToeExtensionMultiplier,
 } from "./game/beachEffectScaling";
-import { tickAbilityState } from "./game/simulation";
+import { tickAbilityState, shuffleArray } from "./game/simulation";
 import { setSfxMuted, sfxTouch, sfxMiss, sfxLevelUp, sfxAbility, sfxGameOver } from "./game/sfx";
 
 interface WavesGameProps {
@@ -903,6 +903,14 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     return hasLeveledBeachEffects() && beachLevelRef.current < 5;
   }, []);
 
+  // Max flashlight duration for the current beach level — used both when
+  // activating and as the HUD bar's denominator (the bar used to divide by
+  // a fixed 25s while level-1 duration is 30s, rendering >100%)
+  const getFlashlightMaxDuration = useCallback((): number => {
+    if (!(hasLeveledBeachEffects() && beachLevelRef.current < 5)) return FLASHLIGHT_DURATION_BOSS;
+    return FLASHLIGHT_LEVEL_DURATIONS[beachLevelRef.current - 1] || 15000;
+  }, []);
+
   // Helper to generate two random beach options for selection
   const generateBeachOptions = useCallback((): BeachEffectType[] => {
     const allBeaches: BeachEffectType[] = [
@@ -919,7 +927,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     }
     
     // Shuffle and pick 2
-    const shuffled = [...availableBeaches].sort(() => Math.random() - 0.5);
+    const shuffled = shuffleArray(availableBeaches);
     return shuffled.slice(0, 2);
   }, [completedBeaches]);
 
@@ -1572,7 +1580,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                       availableBeaches = allBeaches; // Reset cycle
                       setCompletedBeaches([]);
                     }
-                    const shuffled = [...availableBeaches].sort(() => Math.random() - 0.5);
+                    const shuffled = shuffleArray(availableBeaches);
                     setBeachOptions(shuffled.slice(0, 2));
                     setBeachNumber(prev => prev + 1);
                     setBeachLevel(1);
@@ -1642,7 +1650,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                       "fishNet", "nighttime", "roughWaters", "heavySand", "busyBeach"
                     ];
                     const available = allBeaches.filter(b => !bossQuickRunUsedBeaches.includes(b));
-                    const shuffled = [...available].sort(() => Math.random() - 0.5);
+                    const shuffled = shuffleArray(available);
                     const nextBeach = shuffled[0];
                     setBossQuickRunNextBeach(nextBeach);
                     setBossQuickRunUsedBeaches(prev => [...prev, nextBeach]);
@@ -1662,7 +1670,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   const unlocked = unlockedAbilitiesRef.current.map(a => a.type);
                   const excluded = excludedAbilities;
                   const availableForReward = ALL_ABILITIES.filter(a => !unlocked.includes(a) && !excluded.includes(a));
-                  const shuffled = [...availableForReward].sort(() => Math.random() - 0.5);
+                  const shuffled = shuffleArray(availableForReward);
                   setSlayCardRewardAbilities(shuffled.slice(0, 3));
                   
                   // Increment level
@@ -1947,49 +1955,49 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               speed,
               color,
             };
-            setBeachPeople(prev => [...prev, newPerson]);
             beachPeopleRef.current = [...beachPeopleRef.current, newPerson];
+            setBeachPeople(beachPeopleRef.current);
           }
-          
-          // Move people and handle collisions
+
+          // Move people and handle collisions — plain loop code over the ref
+          // (this was the last setState updater with side effects inside it;
+          // updaters must stay pure for StrictMode)
           const feetCol1 = OCEAN_WIDTH / 2 - 1; // Left foot column (9)
           const feetCol2 = OCEAN_WIDTH / 2;     // Right foot column (10)
           const currentFeetPos = feetPositionRef.current;
           // Feet occupy rows from feetPosition to feetPosition + 1 (2 rows tall)
           const feetRowTop = Math.floor(currentFeetPos);
           const feetRowBottom = Math.ceil(currentFeetPos + 1);
-          
-          setBeachPeople(prev => {
-            const updated = prev.map(person => {
-              // Move the person
-              const newCol = person.col + (person.direction * person.speed * deltaTime / 1000);
-              
-              // Check if person has crossed the beach
-              if ((person.direction === 1 && newCol > OCEAN_WIDTH) || 
-                  (person.direction === -1 && newCol < -1)) {
-                return null; // Mark for removal
-              }
-              
-              // Check collision with feet
-              const personColInt = Math.floor(newCol);
-              const personInFeetColumn = personColInt === feetCol1 || personColInt === feetCol2;
-              const personInFeetRow = person.row >= feetRowTop && person.row <= feetRowBottom;
-              
-              if (personInFeetColumn && personInFeetRow) {
-                // Person walks into feet - kick feet back (further from shore = higher row number)
-                // Find nearest safe row that doesn't have this person
-                const safeRow = Math.min(TOTAL_HEIGHT - 1, currentFeetPos + 1);
-                setFeetPosition(safeRow);
-                feetPositionRef.current = safeRow;
-                resetGait(safeRow);
-              }
-              
-              return { ...person, col: newCol };
-            }).filter((p): p is BeachPerson => p !== null);
-            
-            beachPeopleRef.current = updated;
-            return updated;
-          });
+
+          const movedPeople = beachPeopleRef.current.map(person => {
+            // Move the person
+            const newCol = person.col + (person.direction * person.speed * deltaTime / 1000);
+
+            // Check if person has crossed the beach
+            if ((person.direction === 1 && newCol > OCEAN_WIDTH) ||
+                (person.direction === -1 && newCol < -1)) {
+              return null; // Mark for removal
+            }
+
+            // Check collision with feet
+            const personColInt = Math.floor(newCol);
+            const personInFeetColumn = personColInt === feetCol1 || personColInt === feetCol2;
+            const personInFeetRow = person.row >= feetRowTop && person.row <= feetRowBottom;
+
+            if (personInFeetColumn && personInFeetRow) {
+              // Person walks into feet - kick feet back (further from shore = higher row number)
+              // Find nearest safe row that doesn't have this person
+              const safeRow = Math.min(TOTAL_HEIGHT - 1, currentFeetPos + 1);
+              setFeetPosition(safeRow);
+              feetPositionRef.current = safeRow;
+              resetGait(safeRow);
+            }
+
+            return { ...person, col: newCol };
+          }).filter((p): p is BeachPerson => p !== null);
+
+          beachPeopleRef.current = movedPeople;
+          setBeachPeople(movedPeople);
         } else {
           // Clear people when effect is not active
           if (beachPeopleRef.current.length > 0) {
@@ -2253,13 +2261,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     sfxAbility();
     setFlashlightActive(true);
     // Nighttime: scales across levels 1-4 (30s → 25s → 20s → 15s), boss = 10s
-    const isReducedNighttime = hasLeveledBeachEffects() && beachLevelRef.current < 5;
-    let duration = FLASHLIGHT_DURATION_BOSS; // 10s boss
-    if (isReducedNighttime) {
-      const levelDurations = [30000, 25000, 20000, 15000];
-      duration = levelDurations[beachLevelRef.current - 1] || 15000;
-    }
-    setFlashlightDuration(duration);
+    setFlashlightDuration(getFlashlightMaxDuration());
   }, [flashlightActive, flashlightCooldown]);
 
   // Map ability type to activation function
@@ -2916,8 +2918,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     const otherAbilities: AbilityType[] = ["crystalBall", "towelOff", "wetsuit", "doubleDip", "slowdown"];
     
     // Shuffle both pools
-    const shuffledTier1 = [...tier1Abilities].sort(() => Math.random() - 0.5);
-    const shuffledOther = [...otherAbilities].sort(() => Math.random() - 0.5);
+    const shuffledTier1 = shuffleArray(tier1Abilities);
+    const shuffledOther = shuffleArray(otherAbilities);
     
     // Pick at most 2 from Tier 1, then fill remaining from other tiers
     const tier1ToExclude = shuffledTier1.slice(0, Math.min(2, 3));
@@ -2925,7 +2927,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     const otherToExclude = shuffledOther.slice(0, remainingSlots);
     
     // Combine and shuffle to randomize order
-    const newExcludedAbilities = [...tier1ToExclude, ...otherToExclude].sort(() => Math.random() - 0.5);
+    const newExcludedAbilities = shuffleArray([...tier1ToExclude, ...otherToExclude]);
     setExcludedAbilities(newExcludedAbilities);
     
     // Reset all roguelike state
@@ -3055,8 +3057,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     // Randomly exclude 3 abilities
     const tier1Abilities: AbilityType[] = ["superTap", "ghostToe", "jumpAround", "waveMagnet", "waveSurfer"];
     const otherAbilities: AbilityType[] = ["crystalBall", "towelOff", "wetsuit", "doubleDip", "slowdown"];
-    const shuffledTier1 = [...tier1Abilities].sort(() => Math.random() - 0.5);
-    const shuffledOther = [...otherAbilities].sort(() => Math.random() - 0.5);
+    const shuffledTier1 = shuffleArray(tier1Abilities);
+    const shuffledOther = shuffleArray(otherAbilities);
     const tier1ToExclude = shuffledTier1.slice(0, 2);
     const otherToExclude = shuffledOther.slice(0, 1);
     setExcludedAbilities([...tier1ToExclude, ...otherToExclude]);
@@ -4310,7 +4312,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                         <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-amber-500" />
                         <p className="text-amber-400 font-semibold text-sm mb-1">⏱️ Water Timer</p>
                         <p className="text-white/80 text-xs mb-3">
-                          Every level your water timer decreases by 2%! You'll get a chance to upgrade it.
+                          Every level your water timer decreases by 3%! You'll get a chance to upgrade it.
                         </p>
                         <button
                           onClick={() => setShowTimerTutorial(false)}
@@ -4781,7 +4783,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                     {flashlightActive && (
                       <div 
                         className="absolute bottom-0 left-0 h-1 bg-yellow-400 transition-all"
-                        style={{ width: `${(flashlightDuration / ((runType === "beachBonanza" || runType === "slayTheWaves") && beachLevel < 5 ? FLASHLIGHT_DURATION_REDUCED : FLASHLIGHT_DURATION_BOSS)) * 100}%` }}
+                        style={{ width: `${Math.min(100, (flashlightDuration / getFlashlightMaxDuration()) * 100)}%` }}
                       />
                     )}
                     {!flashlightActive && flashlightCooldown > 0 && (
@@ -4960,7 +4962,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                 {flashlightActive && (
                   <div 
                     className="absolute bottom-0 left-0 h-1 bg-yellow-400 transition-all"
-                    style={{ width: `${(flashlightDuration / ((runType === "beachBonanza" || runType === "slayTheWaves") && beachLevel < 5 ? FLASHLIGHT_DURATION_REDUCED : FLASHLIGHT_DURATION_BOSS)) * 100}%` }}
+                    style={{ width: `${Math.min(100, (flashlightDuration / getFlashlightMaxDuration()) * 100)}%` }}
                   />
                 )}
                 {!flashlightActive && flashlightCooldown > 0 && (
@@ -5184,7 +5186,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
               "quicksand", "spikeWaves", "gummyBeach", "coldWater", "crazyWaves",
               "fishNet", "nighttime", "roughWaters", "heavySand", "busyBeach"
             ];
-            const shuffled = [...allBeaches].sort(() => Math.random() - 0.5);
+            const shuffled = shuffleArray(allBeaches);
             const firstBeach = shuffled[0];
             setBossQuickRunUsedBeaches([firstBeach]);
             setBeachEffectWithRef(firstBeach);
@@ -5478,7 +5480,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       {/* Controls hint */}
       {gameState === "playing" && (
         <div className="hidden sm:block absolute bottom-4 left-4 z-20 text-white/50 text-sm font-mono">
-          <p>↑↓ Move • Space = tap • V/B/N = abilities</p>
+          <p>↑↓ Move • Space = tap • C/V/B/N = abilities</p>
         </div>
       )}
     </div>

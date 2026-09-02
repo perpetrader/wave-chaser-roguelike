@@ -1,7 +1,7 @@
 // Slay the Waves - Map Generation (Simplified Tree Structure)
 
-import { MapNode, MapNodeType, SlayMap, FLOORS_PER_ACT } from "./types";
-import { BeachType } from "../BeachSelectionScreen";
+import { type MapNode, type MapNodeType, type SlayMap, FLOORS_PER_ACT } from "./types";
+import type { BeachType } from "../BeachSelectionScreen";
 
 const ALL_BEACHES: BeachType[] = [
   "quicksand", "spikeWaves", "gummyBeach", "coldWater", "crazyWaves",

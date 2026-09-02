@@ -1,9 +1,11 @@
 // Slay the Waves - Type definitions
 
-import { AbilityType, UnlockedAbility, PermanentUpgrades } from "../RoguelikeAbilitySelect";
-import { BeachType } from "../BeachSelectionScreen";
-import { MovementMode } from "../WavesGame";
-import { FootType, ToeTapMode } from "../RoguelikeStartScreen";
+// Type-only imports keep this module runtime-pure: importing it (e.g. from
+// unit tests or mapGenerator) must never load React component modules.
+import type { AbilityType, UnlockedAbility, PermanentUpgrades } from "../RoguelikeAbilitySelect";
+import type { BeachType } from "../BeachSelectionScreen";
+import type { MovementMode } from "../game/constants";
+import type { FootType, ToeTapMode } from "../RoguelikeStartScreen";
 
 // Node types in the map
 export type MapNodeType = "beach" | "elite" | "rest" | "event" | "shop" | "boss";

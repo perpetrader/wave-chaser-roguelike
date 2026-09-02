@@ -98,7 +98,8 @@ const RestSiteScreen = ({
                     className="p-3 rounded-lg border transition-all bg-purple-500/20 border-purple-500/50 hover:bg-purple-500/30 hover:border-purple-400"
                   >
                     <p className="text-purple-400 font-medium text-sm">{ABILITY_NAMES[ability.type]}</p>
-                    <p className="text-white/50 text-xs">Lv.{ability.upgradeCount} → {ability.upgradeCount + 1}</p>
+                    {/* upgradeCount 0 = level 1, matching the Shop and Loadout screens */}
+                    <p className="text-white/50 text-xs">Lv.{ability.upgradeCount + 1} → {ability.upgradeCount + 2}</p>
                   </button>
                 ))}
               </div>
