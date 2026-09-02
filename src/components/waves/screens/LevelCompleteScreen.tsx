@@ -17,7 +17,6 @@ interface LevelCompleteScreenProps {
   unlockedAbilities: UnlockedAbility[];
   waterTimeBonus: number;
   wavesMissedBonus: number;
-  lastWavesMissedUpgradeLevel: number;
   permanentUpgrades: PermanentUpgrades;
   excludedAbilities: AbilityType[];
   upcomingBossEffect: { type: BeachEffectType; name: string; description: string } | null;
@@ -41,7 +40,6 @@ const LevelCompleteScreen = ({
   unlockedAbilities,
   waterTimeBonus,
   wavesMissedBonus,
-  lastWavesMissedUpgradeLevel,
   permanentUpgrades,
   excludedAbilities,
   upcomingBossEffect,
@@ -107,8 +105,8 @@ const LevelCompleteScreen = ({
           waterTimeBonus={waterTimeBonus}
           wavesMissedBonus={wavesMissedBonus}
           baseWaterTime={getRoguelikeLevelSettings(roguelikeLevel + 1).waterTimer}
-          baseWavesToLose={getRoguelikeLevelSettings(roguelikeLevel + 1, lastWavesMissedUpgradeLevel).wavesToLose}
-          previousWavesToLose={getRoguelikeLevelSettings(roguelikeLevel, lastWavesMissedUpgradeLevel).wavesToLose}
+          baseWavesToLose={getRoguelikeLevelSettings(roguelikeLevel + 1).wavesToLose}
+          previousWavesToLose={getRoguelikeLevelSettings(roguelikeLevel).wavesToLose}
           wavesToWin={getRoguelikeLevelSettings(roguelikeLevel + 1).wavesToWin}
           previousWavesToWin={getRoguelikeLevelSettings(roguelikeLevel).wavesToWin}
           permanentUpgrades={permanentUpgrades}

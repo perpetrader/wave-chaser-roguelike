@@ -129,7 +129,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const [roguelikeWavesToLose, setRoguelikeWavesToLose] = useState(7);
   const [waterTimeBonus, setWaterTimeBonus] = useState(0); // ms bonus for water timer
   const [wavesMissedBonus, setWavesMissedBonus] = useState(0); // Permanent bonus to waves allowed to miss
-  const [lastWavesMissedUpgradeLevel, setLastWavesMissedUpgradeLevel] = useState(0); // Level at which last waves missed upgrade was applied
   const [selectedAbilities, setSelectedAbilities] = useState<AbilityType[]>([]); // Abilities selected for current level (max 4)
   const [permanentUpgrades, setPermanentUpgrades] = useState<PermanentUpgrades>({ fastFeet: 0, tapDancer: 0, wetShoes: 0 }); // Permanent stat upgrades from boss beaches
   const [excludedAbilities, setExcludedAbilities] = useState<AbilityType[]>([]); // 3 abilities randomly excluded for this run
@@ -172,6 +171,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   // Score tracking
   const [levelScore, setLevelScore] = useState(0); // Score for current level
   const [totalScore, setTotalScore] = useState(0); // Cumulative score across run
+  const totalScoreRef = useRef(0); // Mirror for reading the total in loop/timeout code (synced below)
   
   // Stats tracking for roguelike
   const [totalSteps, setTotalSteps] = useState(0);
@@ -411,6 +411,10 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   useEffect(() => {
     roguelikeWavesToLoseRef.current = roguelikeWavesToLose;
   }, [roguelikeWavesToLose]);
+
+  useEffect(() => {
+    totalScoreRef.current = totalScore;
+  }, [totalScore]);
 
   // Simulation-state commit helpers: keep ref (simulation truth) and React
   // state (render snapshot) in lockstep for writers outside the game loop.
@@ -1520,20 +1524,22 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
             ) {
               setRoguelikeTotalWaves((prev) => prev + newTotal);
               
-              // Calculate level score
-              const waterTimeSeconds = waterTimerRef.current / 1000;
-              const missedWavesRemaining = roguelikeWavesToLoseRef.current - wavesMissedRef.current;
-              let newLevelScore: number;
-              
-              if (runTypeRef.current === "bossQuickRun") {
-                // Boss Quick Run: 10 * level * (seconds remaining + misses remaining)
-                newLevelScore = Math.round(10 * roguelikeLevelRef.current * (waterTimeSeconds + missedWavesRemaining));
-              } else {
+              // Calculate level score. Boss runs (Quick and Hell) are scored
+              // once in the level-complete transition below instead — their
+              // formula uses run-total remaining misses, which aren't known
+              // until carryover accumulates there. (Previously Quick Run
+              // added a slightly different value HERE and then the displayed
+              // value AGAIN at victory, inflating final scores; Hell Run
+              // wrongly fell into the standard formula.)
+              const isBossRunScoring = runTypeRef.current === "bossQuickRun" || runTypeRef.current === "bossHellRun";
+              if (!isBossRunScoring) {
                 // Standard scoring: +4 per wave touched, +10 per second remaining on water timer, +10 per missed wave remaining
-                newLevelScore = Math.round((newTotal * 4) + (waterTimeSeconds * 10) + (missedWavesRemaining * 10));
+                const waterTimeSeconds = waterTimerRef.current / 1000;
+                const missedWavesRemaining = roguelikeWavesToLoseRef.current - wavesMissedRef.current;
+                const newLevelScore = Math.round((newTotal * 4) + (waterTimeSeconds * 10) + (missedWavesRemaining * 10));
+                setLevelScore(newLevelScore);
+                setTotalScore((prev) => prev + newLevelScore);
               }
-              setLevelScore(newLevelScore);
-              setTotalScore((prev) => prev + newLevelScore);
               
               // Start celebration overlay immediately
               sfxLevelUp();
@@ -1596,35 +1602,37 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
                   const maxMissesForRun = runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_MAX_MISSES : BOSS_QUICK_RUN_MAX_MISSES;
                   const remainingMisses = maxMissesForRun - newTotalMisses;
                   
-                  // Calculate level score for display: 10 * level * (seconds remaining + misses remaining)
+                  // Level score: 10 * level * (seconds remaining + misses remaining).
+                  // Added to the run total exactly once, and the total is the
+                  // sum of the displayed per-level scores by construction.
                   const waterTimeSeconds = carryoverTimer / 1000;
                   const bqrLevelScore = Math.round(10 * roguelikeLevelRef.current * (waterTimeSeconds + remainingMisses));
                   setBossQuickRunLevelScore(bqrLevelScore);
-                  
+                  setLevelScore(bqrLevelScore);
+                  const newRunTotal = totalScoreRef.current + bqrLevelScore;
+                  totalScoreRef.current = newRunTotal;
+                  setTotalScore(newRunTotal);
+
                   const nextLevel = roguelikeLevelRef.current + 1;
-                  
+
                   // Check win condition (completed level 10)
                   if (nextLevel > BOSS_QUICK_RUN_TOTAL_LEVELS) {
                     setRoguelikeLevel(nextLevel);
                     roguelikeLevelRef.current = nextLevel;
-                    
-                    // Calculate final score (already added level 10 score to totalScore)
-                    // Add the final level score to total
+
+                    // High-score check in plain code (this used to live inside
+                    // a setTotalScore updater that ALSO re-added the final
+                    // level's score — the double-count the audit flagged)
                     const highScoreKey = runTypeRef.current === "bossHellRun" ? BOSS_HELL_RUN_HIGH_SCORE_KEY : BOSS_QUICK_RUN_HIGH_SCORE_KEY;
-                    setTotalScore(prev => {
-                      const finalScore = prev + bqrLevelScore;
-                      // Check for high score
-                      const currentHighScore = parseInt(localStorage.getItem(highScoreKey) || "0", 10);
-                      if (finalScore > currentHighScore) {
-                        localStorage.setItem(highScoreKey, finalScore.toString());
-                        setBossQuickRunHighScore(finalScore);
-                        setBossQuickRunIsNewHighScore(true);
-                      } else {
-                        setBossQuickRunIsNewHighScore(false);
-                      }
-                      return finalScore;
-                    });
-                    
+                    const currentHighScore = parseInt(localStorage.getItem(highScoreKey) || "0", 10);
+                    if (newRunTotal > currentHighScore) {
+                      localStorage.setItem(highScoreKey, newRunTotal.toString());
+                      setBossQuickRunHighScore(newRunTotal);
+                      setBossQuickRunIsNewHighScore(true);
+                    } else {
+                      setBossQuickRunIsNewHighScore(false);
+                    }
+
                     // Victory! Show dedicated end screen
                     setGameState("bossQuickRunVictory");
                   } else {
@@ -2620,7 +2628,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     if (isRoguelikeMode && runTypeRef.current !== "slayTheWaves") {
       setRoguelikeWavesToWin(getRoguelikeLevelSettings(levelToUse).wavesToWin);
 
-      const { wavesToLose } = getRoguelikeLevelSettings(levelToUse, lastWavesMissedUpgradeLevel);
+      const { wavesToLose } = getRoguelikeLevelSettings(levelToUse);
       setRoguelikeWavesToLose(Math.max(1, wavesToLose + missedBonus));
     }
     
@@ -2721,8 +2729,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
 
   // Check if ability selection is needed before starting a level
   const proceedToLevel = (nextLevel: number) => {
-    const currentSettings = getRoguelikeLevelSettings(roguelikeLevel, lastWavesMissedUpgradeLevel);
-    const nextSettings = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+    const currentSettings = getRoguelikeLevelSettings(roguelikeLevel);
+    const nextSettings = getRoguelikeLevelSettings(nextLevel);
     
     // Update level state first so subsequent handlers use the correct level
     setRoguelikeLevel(nextLevel);
@@ -2978,9 +2986,8 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     setShowTimerTutorial(false);
     setShowWavesTutorial(false);
     setShowBossBeachPopup(false);
-    setLastWavesMissedUpgradeLevel(0); // Reset grace period for new run
     
-    const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(1, 0);
+    const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(1);
     setRoguelikeWavesToWin(wavesToWin);
     setRoguelikeWavesToLose(wavesToLose);
     
@@ -3427,7 +3434,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       roguelikeTotalWaves,
       waterTimeBonus,
       wavesMissedBonus,
-      lastWavesMissedUpgradeLevel,
       selectedAbilities,
       usedBeachEffects,
       currentBeachEffect,
@@ -3470,7 +3476,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       setRoguelikeTotalWaves(savedRun.roguelikeTotalWaves);
       setWaterTimeBonus(savedRun.waterTimeBonus);
       setWavesMissedBonus(savedRun.wavesMissedBonus);
-      setLastWavesMissedUpgradeLevel(savedRun.lastWavesMissedUpgradeLevel || 0);
       setSelectedAbilities(savedRun.selectedAbilities);
       setUsedBeachEffects(savedRun.usedBeachEffects || []);
       setBeachEffectWithRef(savedRun.currentBeachEffect || null);
@@ -3513,7 +3518,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
         footTypeRef.current = savedRun.footType;
       }
 
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(savedRun.roguelikeLevel, savedRun.lastWavesMissedUpgradeLevel || 0);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(savedRun.roguelikeLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(Math.max(1, wavesToLose + savedRun.wavesMissedBonus));
 
@@ -3545,15 +3550,12 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
   const handleUpgradeWavesMissed = () => {
     const newBonus = wavesMissedBonus + 1;
     setWavesMissedBonus(newBonus);
-    // Track the level at which this upgrade was applied (current level, before advancing)
-    const upgradeAppliedLevel = roguelikeLevel;
-    setLastWavesMissedUpgradeLevel(upgradeAppliedLevel);
     // Advance to next level
     const nextLevel = roguelikeLevel + 1;
     setRoguelikeLevel(nextLevel);
     
-    // Update waves to lose with the new bonus (use upgradeAppliedLevel for grace period)
-    const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, upgradeAppliedLevel);
+    // Update waves to lose with the new bonus
+    const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
     setRoguelikeWavesToWin(wavesToWin);
     setRoguelikeWavesToLose(Math.max(1, wavesToLose + newBonus));
     
@@ -3634,7 +3636,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     // Check if ability selection is needed (more than 4 abilities)
     if (newUnlocked.length > 4) {
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(Math.max(1, wavesToLose + wavesMissedBonus));
       // If we have a valid previous selection, show confirm screen; otherwise select
@@ -3645,7 +3647,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       }
     } else {
       // Pass the new abilities directly since state hasn't updated yet
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(Math.max(1, wavesToLose + wavesMissedBonus));
       proceedAfterUpgrade(nextLevel, undefined, newUnlocked.map(a => a.type));
@@ -3663,7 +3665,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     // Check if ability selection is needed
     if (newUnlocked.length > 4) {
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(wavesToLose + wavesMissedBonus);
       // If we have a valid previous selection, show confirm screen; otherwise select
@@ -3674,7 +3676,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
       }
     } else {
       // Pass the abilities directly since state hasn't updated yet
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(wavesToLose + wavesMissedBonus);
       proceedAfterUpgrade(nextLevel, undefined, newUnlocked.map(a => a.type));
@@ -3692,7 +3694,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     // Check if ability selection is needed
     if (unlockedAbilities.length > 4) {
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(wavesToLose + wavesMissedBonus);
       // If we have a valid previous selection, show confirm screen; otherwise select
@@ -3713,7 +3715,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     // Check if ability selection is needed
     if (unlockedAbilities.length > 4) {
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(wavesToLose + wavesMissedBonus);
       // If we have a valid previous selection, show confirm screen; otherwise select
@@ -3740,7 +3742,7 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
     
     // Check if ability selection is needed
     if (unlockedAbilities.length > 4) {
-      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel, lastWavesMissedUpgradeLevel);
+      const { wavesToWin, wavesToLose } = getRoguelikeLevelSettings(nextLevel);
       setRoguelikeWavesToWin(wavesToWin);
       setRoguelikeWavesToLose(wavesToLose + wavesMissedBonus);
       if (selectedAbilities.length === 4) {
@@ -5428,7 +5430,6 @@ const WavesGame = ({ startInRoguelike = false }: WavesGameProps) => {
           unlockedAbilities={unlockedAbilities}
           waterTimeBonus={waterTimeBonus}
           wavesMissedBonus={wavesMissedBonus}
-          lastWavesMissedUpgradeLevel={lastWavesMissedUpgradeLevel}
           permanentUpgrades={permanentUpgrades}
           excludedAbilities={excludedAbilities}
           upcomingBossEffect={getUpcomingBossEffect()}

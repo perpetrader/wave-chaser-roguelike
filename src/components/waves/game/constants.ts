@@ -89,7 +89,6 @@ export interface SavedRun {
   roguelikeTotalWaves: number;
   waterTimeBonus: number;
   wavesMissedBonus: number;
-  lastWavesMissedUpgradeLevel: number; // Track grace period for waves missed decreases
   selectedAbilities: AbilityType[];
   usedBeachEffects: BeachEffectType[];
   currentBeachEffect: BeachEffectType | null;
@@ -252,7 +251,7 @@ export interface AbilityState {
 export const ROGUELIKE_BASE_WATER_TIMER = 5000;
 
 // Calculate roguelike settings for a given level
-export const getRoguelikeLevelSettings = (level: number, lastUpgradeLevel: number = 0): {
+export const getRoguelikeLevelSettings = (level: number): {
   settings: DifficultySettings;
   wavesToWin: number;
   wavesToLose: number;

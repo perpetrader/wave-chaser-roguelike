@@ -30,28 +30,46 @@ const getRandomBeach = (usedBeaches: BeachType[]): BeachType => {
   return shuffle(available)[0];
 };
 
-// Determine node type based on row position
-const getNodeTypeForRow = (row: number, totalRows: number): MapNodeType => {
-  // Last row is always boss
+// Roll one node's type. Types mix WITHIN a row (Slay the Spire style) —
+// the old scheme typed entire rows, which made whole floors of shops/rests
+// and left the run's pacing hostage to hardcoded row lists that silently
+// desynced from FLOORS_PER_ACT. Constraints:
+// - row 0: always beach (intro fights)
+// - row 1: beach/event only (no economy nodes before any gold is earned)
+// - elites: only from row 3 on, and never on the pre-boss row
+// - pre-boss row additionally guarantees one rest (see rollRowTypes)
+const rollNodeType = (row: number, totalRows: number): MapNodeType => {
   if (row === totalRows - 1) return "boss";
-  
-  // Shop or rest at specific floors (rows 2, 5, 8, 11 = floors 3, 6, 9, 12)
-  const SHOP_REST_ROWS = [2, 5, 8, 11];
-  if (SHOP_REST_ROWS.includes(row)) {
-    return Math.random() < 0.5 ? "shop" : "rest";
+  if (row === 0) return "beach";
+  if (row === 1) return Math.random() < 0.2 ? "event" : "beach";
+
+  const isPreBoss = row === totalRows - 2;
+  const eliteAllowed = row >= 3 && !isPreBoss;
+  const r = Math.random();
+  if (eliteAllowed) {
+    // beach 50% / elite 14% / shop 11% / rest 14% / event 11%
+    if (r < 0.50) return "beach";
+    if (r < 0.64) return "elite";
+    if (r < 0.75) return "shop";
+    if (r < 0.89) return "rest";
+    return "event";
   }
-  
-  // Elite at rows 4, 7, 10 (40% chance)
-  const ELITE_ROWS = [4, 7, 10];
-  if (ELITE_ROWS.includes(row) && Math.random() < 0.4) {
-    return "elite";
+  // beach 60% / shop 12% / rest 16% / event 12%
+  if (r < 0.60) return "beach";
+  if (r < 0.72) return "shop";
+  if (r < 0.88) return "rest";
+  return "event";
+};
+
+// Roll a whole row's types, applying row-level guarantees:
+// the floor right before the boss always offers at least one rest site.
+const rollRowTypes = (row: number, totalRows: number, numNodes: number): MapNodeType[] => {
+  const types = Array.from({ length: numNodes }, () => rollNodeType(row, totalRows));
+  const isPreBoss = row === totalRows - 2 && numNodes > 0;
+  if (isPreBoss && !types.includes("rest")) {
+    types[Math.floor(Math.random() * numNodes)] = "rest";
   }
-  
-  // Events have ~15% chance on other rows
-  if (Math.random() < 0.15) return "event";
-  
-  // Default to beach battle
-  return "beach";
+  return types;
 };
 
 // Generate the simplified tree map
@@ -80,10 +98,12 @@ export const generateMap = (actNumber: number): SlayMap => {
       numNodes = 5;
     }
     
-    // Generate nodes for this row
+    // Generate nodes for this row (types rolled together so row-level
+    // guarantees like the pre-boss rest can be enforced)
+    const rowTypes = rollRowTypes(row, totalRows, numNodes);
     for (let i = 0; i < numNodes; i++) {
-      const type = row === 0 ? "beach" : getNodeTypeForRow(row, totalRows);
-      
+      const type = rowTypes[i];
+
       const node: MapNode = {
         id: generateId(),
         type,
